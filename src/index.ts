@@ -3,9 +3,9 @@ import { dirname, join } from 'node:path';
 import OpenAI from 'openai';
 import { config } from './config.js';
 import { Runtime, type EffectSink } from './runtime.js';
-import { JsonStore } from './engine/store.js';
+import { JsonStore, MemoryStore } from './engine/store.js';
 import { startHttp, type HttpHandlers } from './server/http.js';
-import { DemoSink, FixtureRunner, loadFixture } from './demo/fixture.js';
+import { DemoSink, FixtureRunner, loadFixture, seededState } from './demo/fixture.js';
 import { heuristicExtract } from './engine/heuristic.js';
 import { extractPromises } from './engine/extract.js';
 import { transcribeChunk } from './engine/transcribe.js';
@@ -18,8 +18,11 @@ import type { IOU, Receipt } from './engine/types.js';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 async function main(): Promise<void> {
-  const channel = config.mode === 'demo' ? 'demo_streamer' : config.twitch.channel;
-  const rt = new Runtime(new JsonStore(config.dataDir), channel, config.mode, config.publicUrl, {
+  const fixture = config.mode === 'demo' ? await loadFixture(join(root, 'fixtures', 'demo-stream.json')) : undefined;
+  const channel = fixture ? fixture.channel : config.twitch.channel;
+  const store = fixture ? new MemoryStore() : new JsonStore(config.dataDir);
+  if (fixture) await store.save(seededState(fixture));
+  const rt = new Runtime(store, channel, config.mode, config.publicUrl, {
     voteQuorum: config.voteQuorum,
     extractionMode: config.extractionMode,
   });
@@ -58,9 +61,8 @@ async function main(): Promise<void> {
     };
   }
 
-  if (config.mode === 'demo') {
+  if (fixture) {
     rt.sink = new DemoSink(rt);
-    const fixture = await loadFixture(join(root, 'fixtures', 'demo-stream.json'));
     const runner = new FixtureRunner(rt, fixture);
     handlers.onDemoRestart = () => runner.start();
     handlers.onDemoChat = (login, text) => runner.chat({

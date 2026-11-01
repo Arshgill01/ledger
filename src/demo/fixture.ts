@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import type { Runtime } from '../runtime.js';
 import type { ChatMessage } from '../twitch/eventsub.js';
-import type { ExtractedPromise, IOU, Receipt } from '../engine/types.js';
+import type { ExtractedPromise, IOU, LedgerState, Receipt } from '../engine/types.js';
+import { initialState } from '../engine/ledger.js';
 import { handleCommand } from '../twitch/commands.js';
 
 export type FixtureStep =
@@ -15,7 +16,16 @@ export type FixtureStep =
 export interface Fixture {
   name: string;
   channel: string;
+  seed?: { note?: string; ious: IOU[] };
   steps: FixtureStep[];
+}
+
+/** State the demo starts from: the seed IOUs, dated a week ago, so the carry-over story is visible on first load. */
+export function seededState(fixture: Fixture): LedgerState {
+  const base = initialState(fixture.channel);
+  const lastWeek = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const ious = (fixture.seed?.ious ?? []).map((i) => ({ ...i, createdAt: i.createdAt === '__LAST_WEEK__' ? lastWeek : i.createdAt }));
+  return { ...base, ious, nextId: Math.max(0, ...ious.map((i) => i.id)) + 1 };
 }
 
 export async function loadFixture(path: string): Promise<Fixture> {

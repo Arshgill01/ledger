@@ -49,7 +49,7 @@ export function startHttp(rt: Runtime, handlers: HttpHandlers, port: number, pub
     let p = urlPath.split('?')[0];
     if (p === '/' ) p = '/index.html';
     if (p === '/overlay' || p === '/panel' || p === '/ledger') p = `${p}/index.html`;
-    if (p.startsWith('/ledger/')) p = '/ledger/index.html';
+    if (/^\/ledger\/[^/.]+$/.test(p)) p = '/ledger/index.html';
     const file = normalize(join(publicDir, p));
     if (!file.startsWith(normalize(publicDir))) return false;
     try {
