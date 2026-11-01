@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ledger overlay</title><link rel="stylesheet" href="/shared.css">
+<style>
+html, body { background: transparent !important; width: 1920px; height: 1080px; overflow: hidden; }
+#board { position: absolute; left: 40px; bottom: 40px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+#board .receipt { transform-origin: left bottom; animation: slidein .5s cubic-bezier(.2,.8,.2,1); }
+#board .receipt.leaving { animation: slideout .5s forwards; }
+#title { font: 700 13px/1 var(--mono); letter-spacing: .2em; text-transform: uppercase; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.6); margin-bottom: -4px; opacity: .9; }
+#stage { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.stamp-big {
+  font: 900 96px/1 var(--mono); letter-spacing: .06em; color: var(--stamp);
+  border: 10px solid var(--stamp); border-radius: 14px; padding: 18px 42px; background: rgba(251,247,238,.92);
+  transform: rotate(-9deg) scale(3); opacity: 0; mix-blend-mode: normal;
+  animation: slam 2.6s cubic-bezier(.2,.9,.1,1) forwards; box-shadow: 0 30px 80px rgba(0,0,0,.5);
+  text-align: center;
+}
+.stamp-big small { display: block; font: 700 30px/1.2 var(--mono); color: var(--ink); letter-spacing: 0; margin-top: 10px; text-transform: none; }
+.stamp-big.due { color: var(--due); border-color: var(--due); }
+.stamp-big.paid { color: var(--paid); border-color: var(--paid); }
+.stamp-big.welched { color: var(--welched); border-color: var(--welched); }
+@keyframes slam { 0% { transform: rotate(-9deg) scale(3); opacity: 0 } 12% { transform: rotate(-9deg) scale(1); opacity: 1 } 16% { transform: rotate(-9deg) scale(1.04) } 20% { transform: rotate(-9deg) scale(1) } 80% { opacity: 1; transform: rotate(-9deg) scale(1) } 100% { opacity: 0; transform: rotate(-9deg) scale(.9) translateY(40px) } }
+@keyframes slidein { from { transform: translateX(-40px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes slideout { to { transform: translateX(-40px); opacity: 0; height: 0; margin: 0; padding: 0 } }
+.receipt .thumb { margin-top: 8px; width: 100%; aspect-ratio: 16/9; object-fit: cover; border: 1px solid var(--ink-2); }
+</style></head><body>
+<div id="badge" class="badge-demo" hidden>Demo<small>synthetic stream</small></div>
+<div id="stage"></div>
+<div id="board"><div id="title">The Ledger</div></div>
+<script src="/overlay/overlay.js"></script>
+</body></html>

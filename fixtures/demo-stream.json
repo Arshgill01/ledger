@@ -1,0 +1,56 @@
+{
+  "name": "Synthetic Tuesday stream",
+  "channel": "demo_streamer",
+  "steps": [
+    { "at": 0, "type": "stream.online" },
+    { "at": 0.5, "type": "status", "text": "Synthetic stream started. Nothing here touches Twitch or OpenAI." },
+    { "at": 1, "type": "chat", "login": "pixel_pat", "text": "lets gooo" },
+    { "at": 2, "type": "transcript", "text": "Okay okay we're live. Chat, how are we doing tonight." },
+    { "at": 4, "type": "chat", "login": "mossy_mod", "text": "!owed", "mod": true },
+    { "at": 7, "type": "transcript", "text": "Alright so this run. If we hit ten follows tonight I will eat the ghost pepper on stream. I bought it. It's right here." },
+    { "at": 8.5, "type": "promises", "promises": [
+      { "text": "eat the ghost pepper on stream", "quote": "If we hit ten follows tonight I will eat the ghost pepper on stream.", "stake": "ghost pepper", "confidence": 0.93,
+        "condition": { "kind": "count", "metric": "follows", "target": 10, "progress": 0, "window": "stream" } }
+    ] },
+    { "at": 10, "type": "chat", "login": "pixel_pat", "text": "LOGGED" },
+    { "at": 10.5, "type": "chat", "login": "sneaky_sam", "text": "the receipt machine is real" },
+    { "at": 12, "type": "metric", "metric": "follows", "delta": 3 },
+    { "at": 13, "type": "chat", "login": "glorp", "text": "followed. pepper time" },
+    { "at": 15, "type": "transcript", "text": "Wait wait, it's actually counting. Okay. Also I owe chat a song from last week, I know, I know." },
+    { "at": 16.5, "type": "promises", "promises": [
+      { "text": "sing a song for chat", "quote": "Also I owe chat a song from last week", "stake": "a song", "confidence": 0.88, "condition": { "kind": "none" } }
+    ] },
+    { "at": 18, "type": "metric", "metric": "follows", "delta": 3 },
+    { "at": 20, "type": "chat", "login": "mossy_mod", "text": "!owed", "mod": true },
+    { "at": 23, "type": "transcript", "text": "And if I die to this boss I'm doing twenty pushups. On camera. No cuts." },
+    { "at": 24.5, "type": "promises", "promises": [
+      { "text": "do twenty pushups on camera", "quote": "if I die to this boss I'm doing twenty pushups. On camera.", "stake": "20 pushups", "confidence": 0.9, "condition": { "kind": "event", "label": "if I die to this boss" } }
+    ] },
+    { "at": 27, "type": "metric", "metric": "follows", "delta": 2 },
+    { "at": 29, "type": "chat", "login": "sneaky_sam", "text": "8/10 LETS GO" },
+    { "at": 31, "type": "transcript", "text": "No. No no no. Two more. Chat do not." },
+    { "at": 33, "type": "metric", "metric": "follows", "delta": 2 },
+    { "at": 35, "type": "chat", "login": "glorp", "text": "PEPPER PEPPER PEPPER" },
+    { "at": 36, "type": "chat", "login": "pixel_pat", "text": "its pinned LMAO" },
+    { "at": 40, "type": "transcript", "text": "Fine. Fine! A deal is a deal. Here we go." },
+    { "at": 46, "type": "transcript", "text": "Oh that is... that is so much worse than I thought. Okay. Done. I did it." },
+    { "at": 48, "type": "chat", "login": "pixel_pat", "text": "!paid" },
+    { "at": 48.5, "type": "chat", "login": "glorp", "text": "!paid" },
+    { "at": 49, "type": "chat", "login": "sneaky_sam", "text": "!paid" },
+    { "at": 49.5, "type": "chat", "login": "mossy_mod", "text": "!paid", "mod": true },
+    { "at": 50, "type": "chat", "login": "quietkat", "text": "!cap" },
+    { "at": 54, "type": "chat", "login": "glorp", "text": "!receipts" },
+    { "at": 58, "type": "transcript", "text": "Okay, boss time. If I die here, you know what happens." },
+    { "at": 62, "type": "chat", "login": "mossy_mod", "text": "!due 3", "mod": true },
+    { "at": 63, "type": "chat", "login": "sneaky_sam", "text": "HE DIED" },
+    { "at": 66, "type": "chat", "login": "pixel_pat", "text": "!paid 3" },
+    { "at": 66.5, "type": "chat", "login": "glorp", "text": "!cap 3" },
+    { "at": 67, "type": "chat", "login": "quietkat", "text": "!cap 3" },
+    { "at": 67.5, "type": "chat", "login": "sneaky_sam", "text": "!cap 3" },
+    { "at": 68, "type": "chat", "login": "mossy_mod", "text": "!cap 3", "mod": true },
+    { "at": 70, "type": "chat", "login": "glorp", "text": "that was like 12 pushups max" },
+    { "at": 74, "type": "transcript", "text": "Alright that's the stream. The song is still on the books, I know. Tomorrow. Probably." },
+    { "at": 76, "type": "stream.offline" },
+    { "at": 77, "type": "status", "text": "Synthetic stream ended. IOU #2 carries over to the next stream." }
+  ]
+}

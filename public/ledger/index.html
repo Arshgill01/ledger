@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ledger — public</title><link rel="stylesheet" href="/shared.css">
+<style>
+body { padding: 28px 20px 60px; }
+main { max-width: 1180px; margin: 0 auto; }
+h1 { font-family: var(--mono); margin: 0; font-size: 34px; }
+.sub { color: var(--text-2); margin: 6px 0 26px; }
+h2 { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-2); margin: 28px 0 12px; }
+.wrap { display: flex; flex-wrap: wrap; gap: 18px; }
+.receipt .thumb { margin-top: 8px; width: 100%; aspect-ratio: 16/9; object-fit: cover; border: 1px solid var(--ink-2); display: block; }
+.receipt a { color: var(--ink); }
+.empty { color: var(--text-2); font-family: var(--mono); }
+.stats { display: flex; gap: 22px; font-family: var(--mono); color: var(--text-2); }
+.stats b { color: var(--text); font-size: 22px; display: block; }
+</style></head><body>
+<div id="badge" class="badge-demo" hidden>Demo<small>synthetic stream</small></div>
+<main>
+  <h1 id="title">Ledger</h1>
+  <div class="sub" id="sub">Everything the streamer owes chat. Chat keeps the receipts.</div>
+  <div class="stats"><div><b id="n-open">0</b>open</div><div><b id="n-due">0</b>due</div><div><b id="n-paid">0</b>paid</div><div><b id="n-welched">0</b>welched</div></div>
+  <h2>Due now</h2><div class="wrap" id="due"></div>
+  <h2>On the books</h2><div class="wrap" id="open"></div>
+  <h2>Paid, with receipts</h2><div class="wrap" id="paid"></div>
+  <h2>Welched</h2><div class="wrap" id="welched"></div>
+</main>
+<script src="/ledger/ledger.js"></script>
+</body></html>

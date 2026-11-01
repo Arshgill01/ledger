@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ledger — streamer panel</title><link rel="stylesheet" href="/shared.css">
+<style>
+body { padding: 20px; }
+header { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+header h1 { font-family: var(--mono); margin: 0; font-size: 26px; }
+header .pill { font: 600 12px/1 var(--sans); padding: 6px 10px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text-2); }
+header .pill.on { color: #fff; background: var(--twitch); border-color: var(--twitch); }
+header .spacer { flex: 1; }
+.grid { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 16px; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-height: 120px; }
+section h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); display: flex; justify-content: space-between; align-items: center; }
+button, select, input, textarea { font: inherit; }
+button { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 11px; cursor: pointer; }
+button:hover { border-color: var(--twitch); }
+button.primary { background: var(--twitch); border-color: var(--twitch); color: #fff; }
+button.danger { color: #ff8a80; }
+button.small { padding: 4px 8px; font-size: 12px; }
+button[disabled] { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.iou { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: var(--panel-2); }
+.iou .t { font-weight: 600; }
+.iou .t::first-letter { text-transform: uppercase; }
+.iou .m { color: var(--text-2); font-size: 12px; margin: 3px 0 8px; font-family: var(--mono); }
+.iou.due { border-color: var(--due); }
+.iou.pending { border-style: dashed; }
+.state { font: 700 10px/1 var(--mono); letter-spacing: .1em; padding: 3px 6px; border-radius: 4px; background: #333; margin-right: 6px; }
+.state.DUE { background: var(--due); } .state.OPEN { background: #3a3a40; } .state.PENDING { background: #665200; } .state.PAID { background: var(--paid); } .state.WELCHED { background: var(--welched); }
+#transcript, #chat, #status { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; max-height: 260px; overflow-y: auto; color: var(--text-2); }
+#transcript div, #chat div { padding: 2px 0; border-bottom: 1px solid #222; }
+#chat .bot { color: #d9b6ff; }
+#chat .pinned::before { content: '📌 '; }
+#chat b { color: var(--text); font-weight: 600; }
+#transcript .live { color: var(--text); }
+textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-height: 54px; resize: vertical; }
+input[type=number], input[type=text] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.meter { display: inline-block; width: 90px; height: 6px; background: #333; border-radius: 3px; overflow: hidden; vertical-align: middle; }
+.meter i { display: block; height: 100%; background: var(--paid); width: 0; }
+.counters { display: flex; gap: 14px; font-family: var(--mono); font-size: 13px; color: var(--text-2); }
+.counters b { color: var(--text); }
+.hint { color: var(--text-2); font-size: 12px; }
+.demo-only { display: none; } body.demo .demo-only { display: initial; }
+.live-only { display: initial; } body.demo .live-only { display: none; }
+</style></head><body>
+<div id="badge" class="badge-demo" hidden>Demo<small>synthetic stream</small></div>
+<header>
+  <h1>Ledger</h1>
+  <span id="pill-mode" class="pill">mode</span>
+  <span id="pill-twitch" class="pill">twitch: off</span>
+  <span id="pill-stream" class="pill">stream: offline</span>
+  <span class="spacer"></span>
+  <a class="live-only" href="/auth/login"><button class="primary" id="btn-connect">Connect Twitch</button></a>
+  <button class="demo-only" id="btn-restart">Restart demo stream</button>
+  <a href="/overlay" target="_blank"><button>Overlay ↗</button></a>
+  <a href="/ledger" target="_blank"><button>Public ledger ↗</button></a>
+</header>
+
+<div class="grid">
+  <section>
+    <h2>Mic &amp; transcript <span id="mic-state" class="hint">off</span></h2>
+    <div class="row">
+      <button id="btn-mic" class="primary live-only">Start mic</button>
+      <span class="meter"><i id="meter"></i></span>
+      <label class="hint">Extraction:
+        <select id="sel-mode"><option value="auto">auto (stamp immediately)</option><option value="approval">approval (queue first)</option></select>
+      </label>
+    </div>
+    <div id="transcript"></div>
+    <div class="row" style="margin-top:10px">
+      <textarea id="say" placeholder="No mic? Type what the streamer said and press Enter. e.g. “if we hit 10 follows tonight I'll eat the ghost pepper”"></textarea>
+    </div>
+    <div class="hint">Typed lines go through the same extractor as the mic.</div>
+  </section>
+
+  <section>
+    <h2>IOUs <span class="counters"><span>subs <b id="c-subs">0</b></span><span>follows <b id="c-follows">0</b></span><span>bits <b id="c-bits">0</b></span><span>raid <b id="c-raiders">0</b></span></span></h2>
+    <div class="row">
+      <input id="manual" type="text" placeholder="Log an IOU by hand" style="flex:1">
+      <button id="btn-manual">Log</button>
+    </div>
+    <div id="ious"></div>
+    <div class="row demo-only" style="margin-top:8px">
+      <span class="hint">Fake events:</span>
+      <button class="small" data-metric="follows" data-delta="1">+1 follow</button>
+      <button class="small" data-metric="subs" data-delta="1">+1 sub</button>
+      <button class="small" data-metric="bits" data-delta="100">+100 bits</button>
+      <button class="small" data-metric="raiders" data-value="40">raid 40</button>
+      <button class="small" id="btn-offline">end stream</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Chat <span class="hint">!owed · !paid · !cap · !iou · !due · !void</span></h2>
+    <div id="chat"></div>
+    <div class="row demo-only" style="margin-top:8px">
+      <input id="fake-chat" type="text" placeholder="Send as a fake viewer, e.g. !owed" style="flex:1">
+      <button id="btn-fake-chat">Send</button>
+    </div>
+    <h2 style="margin-top:14px">Settings</h2>
+    <div class="row">
+      <label class="hint">Quorum <input id="quorum" type="number" min="1" max="50" style="width:64px"></label>
+      <label class="hint"><input id="autopin" type="checkbox"> pin when due</label>
+      <label class="hint"><input id="autoclip" type="checkbox"> clip receipts</label>
+    </div>
+    <h2 style="margin-top:14px">Status</h2>
+    <div id="status"></div>
+  </section>
+</div>
+<script src="/panel/panel.js"></script>
+</body></html>
