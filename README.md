@@ -26,6 +26,20 @@ Open http://localhost:3000. Demo mode plays a synthetic stream: scripted transcr
 3. `npm run dev`, open http://localhost:3000/panel, click **Connect Twitch**, then **Start mic**.
 4. Add http://localhost:3000/overlay as a browser source in OBS (1920x1080, transparent).
 
+## How it works
+
+```
+mic → 4s audio chunks → OpenAI transcription → promise extraction (JSON schema) → IOU stamped on overlay
+Twitch EventSub (follows / subs / bits / raid / stream.offline) → condition progress → DUE
+DUE → Send Chat Message with pin:true + Create Clip (the receipt) → chat votes !paid / !cap → PAID or WELCHED
+```
+
+The engine (`src/engine/ledger.ts`) is a pure reducer with tests (`npm test`). Everything with side effects (Twitch, OpenAI, files) lives outside it.
+
+## Chat commands
+
+`!owed` board · `!paid [n]` / `!cap [n]` vote · `!iou <text>` (mods) · `!due <n>` (mods) · `!void <n>` (mods) · `!receipts` link
+
 ## Status
 
-Scaffold. See `docs/BUILD_LOG.md`.
+First cut complete: demo mode, engine, Twitch layer, extraction, overlay, panel, public ledger. Live-mode verification pending. See `docs/BUILD_LOG.md` and `docs/CODEX_PLAN.md`.
