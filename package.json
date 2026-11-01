@@ -1,0 +1,28 @@
+{
+  "name": "ledger",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ledger: chat keeps the receipts. Logs every promise a streamer makes on stream, tracks the conditions via Twitch EventSub, and calls in the debt when it comes due.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "demo": "RECEIPTS_MODE=demo tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "openai": "^7.47.0",
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
