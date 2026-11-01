@@ -36,7 +36,7 @@ a { color: var(--twitch); }
   -webkit-mask: radial-gradient(circle at var(--notch) 0, transparent 0 calc(var(--notch) - 1px), #000 var(--notch)) 0 0 / calc(var(--notch) * 2) 100% repeat-x, linear-gradient(#000, #000) 0 var(--notch) / 100% calc(100% - var(--notch) * 2) no-repeat, radial-gradient(circle at var(--notch) 100%, transparent 0 calc(var(--notch) - 1px), #000 var(--notch)) 0 100% / calc(var(--notch) * 2) 100% repeat-x;
   mask: radial-gradient(circle at var(--notch) 0, transparent 0 calc(var(--notch) - 1px), #000 var(--notch)) 0 0 / calc(var(--notch) * 2) 100% repeat-x, linear-gradient(#000, #000) 0 var(--notch) / 100% calc(100% - var(--notch) * 2) no-repeat, radial-gradient(circle at var(--notch) 100%, transparent 0 calc(var(--notch) - 1px), #000 var(--notch)) 0 100% / calc(var(--notch) * 2) 100% repeat-x;
 }
-.receipt .head { display: flex; justify-content: space-between; align-items: baseline; padding-right: 86px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px dashed var(--ink-2); padding-bottom: 6px; margin-bottom: 8px; }
+.receipt .head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px dashed var(--ink-2); padding-bottom: 6px; margin-bottom: 8px; }
 .receipt .id { font-weight: 700; color: var(--ink); }
 .receipt .text { font-size: 18px; line-height: 1.25; font-weight: 700; margin: 2px 0 8px; }
 .receipt .text::first-letter { text-transform: uppercase; }
@@ -46,7 +46,7 @@ a { color: var(--twitch); }
 .receipt .votes { display: flex; gap: 14px; font-size: 13px; margin-top: 8px; }
 .receipt .votes b { font-size: 15px; }
 .receipt .stamp {
-  position: absolute; right: 12px; top: 10px; transform: rotate(-12deg);
+  position: absolute; right: 12px; bottom: 30px; transform: rotate(-12deg);
   font-weight: 900; letter-spacing: .08em; font-size: 20px; padding: 2px 8px;
   border: 3px solid var(--stamp); color: var(--stamp); border-radius: 4px; opacity: .9;
   mix-blend-mode: multiply;
