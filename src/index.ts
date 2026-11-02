@@ -28,15 +28,18 @@ async function main(): Promise<void> {
   });
   await rt.init();
 
-  const openai = config.hasOpenAI ? new OpenAI({ apiKey: config.openai.apiKey }) : undefined;
+  const speechClient = config.mode === 'live' && config.hasOpenAI ? new OpenAI({ apiKey: config.openai.apiKey }) : undefined;
+  const extractionClient = config.mode === 'live' && config.extraction.apiKey
+    ? new OpenAI({ apiKey: config.extraction.apiKey, ...(config.extraction.provider === 'deepseek' ? { baseURL: 'https://api.deepseek.com', maxRetries: 0 } : {}) })
+    : undefined;
   let streamContext: { title?: string; game?: string } = {};
 
   async function extractFrom(text: string, source: IOU['source']): Promise<void> {
     rt.pushTranscript(text);
     const openIous = rt.state.ious.filter((i) => i.state === 'OPEN' || i.state === 'DUE' || i.state === 'PENDING').map((i) => ({ id: i.id, text: i.text }));
     let promises;
-    if (openai) {
-      promises = await extractPromises(openai, config.openai.extractModel, { transcript: rt.transcript.recent(), openIous, context: { ...streamContext, now: new Date().toISOString() } });
+    if (extractionClient) {
+      promises = await extractPromises(extractionClient, config.extraction.model, { transcript: rt.transcript.recent(), openIous, context: { ...streamContext, now: new Date().toISOString() } }, config.extraction.provider);
     } else {
       promises = heuristicExtract(text);
     }
@@ -47,13 +50,13 @@ async function main(): Promise<void> {
     onTranscript: (text) => extractFrom(text, config.mode === 'demo' ? 'fixture' : 'speech'),
   };
 
-  if (openai) {
+  if (speechClient) {
     let busy = false;
     handlers.onAudio = async (audio, mime) => {
       if (busy) return;
       busy = true;
       try {
-        const text = await transcribeChunk(openai, config.openai.transcribeModel, audio, mime, rt.transcript.recent(20_000));
+        const text = await transcribeChunk(speechClient, config.openai.transcribeModel, audio, mime, rt.transcript.recent(20_000));
         if (text) await extractFrom(text, 'speech');
       } finally {
         busy = false;
@@ -85,6 +88,7 @@ async function main(): Promise<void> {
   };
 
   let eventsub: EventSubClient | undefined;
+  let pollTimer: NodeJS.Timeout | undefined;
 
   async function connectTwitch(): Promise<void> {
     const tok = auth.current;
@@ -94,7 +98,7 @@ async function main(): Promise<void> {
     }
     const broadcaster = await helix.getUserByLogin(config.twitch.channel);
     if (!broadcaster) throw new Error(`channel ${config.twitch.channel} not found`);
-    if (broadcaster.id !== tok.userId) rt.log(`Warning: token belongs to ${tok.login}, not ${config.twitch.channel}. Pinning needs the broadcaster or a mod.`);
+    if (broadcaster.id !== tok.userId) throw new Error(`Connect Twitch as broadcaster ${config.twitch.channel}, not ${tok.login}`);
     const ids = { broadcasterId: broadcaster.id, userId: tok.userId };
 
     const sink: EffectSink = {
@@ -130,19 +134,20 @@ async function main(): Promise<void> {
     };
 
     eventsub?.stop();
+    if (pollTimer) clearInterval(pollTimer);
     eventsub = new EventSubClient(helix, ids, (e) => {
       const at = new Date().toISOString();
       switch (e.type) {
-        case 'chat': void onChat(e.message); break;
-        case 'metric': void rt.dispatch({ type: 'metric', metric: e.metric, delta: e.delta, value: e.value, at }); break;
-        case 'stream.online': void rt.dispatch({ type: 'stream.online', streamId: e.streamId, at }); break;
-        case 'stream.offline': void rt.dispatch({ type: 'stream.offline', at }); break;
+        case 'chat': void onChat(e.message).catch((err) => rt.log(`chat failed: ${(err as Error).message}`)); break;
+        case 'metric': void rt.dispatch({ type: 'metric', metric: e.metric, delta: e.delta, value: e.value, at }).catch((err) => rt.log(`metric failed: ${(err as Error).message}`)); break;
+        case 'stream.online': void rt.dispatch({ type: 'stream.online', streamId: e.streamId, at }).catch((err) => rt.log(`stream event failed: ${(err as Error).message}`)); break;
+        case 'stream.offline': void rt.dispatch({ type: 'stream.offline', at }).catch((err) => rt.log(`stream event failed: ${(err as Error).message}`)); break;
+        case 'connection': rt.twitchConnected = e.connected; rt.log(`Twitch EventSub ${e.connected ? 'ready' : 'not ready'}`); break;
         case 'status': rt.log(e.text); break;
       }
     });
     eventsub.start();
-    rt.twitchConnected = true;
-    rt.log(`Twitch connected as ${tok.login} for channel ${broadcaster.login}`);
+    rt.log(`Twitch authenticated as ${tok.login} for channel ${broadcaster.login}; connecting EventSub`);
 
     const poll = async () => {
       try {
@@ -158,11 +163,11 @@ async function main(): Promise<void> {
       }
     };
     void poll();
-    setInterval(poll, 60_000);
+    pollTimer = setInterval(poll, 60_000);
   }
 
   startHttp(rt, handlers, config.port, join(root, 'public'));
-  rt.log(`${config.mode.toUpperCase()} MODE for channel ${config.twitch.channel}${openai ? '' : ' (no OpenAI key: heuristic extraction + !iou only)'}`);
+  rt.log(`${config.mode.toUpperCase()} MODE for channel ${config.twitch.channel}${extractionClient ? ` (${config.extraction.provider} extraction; microphone ${speechClient ? 'available' : 'unavailable'})` : ' (AI disabled: heuristic extraction + !iou only)'}`);
   await connectTwitch().catch((err) => rt.log(`Twitch connect failed: ${(err as Error).message}`));
 }
 

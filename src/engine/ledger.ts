@@ -267,6 +267,7 @@ export function reduce(state: LedgerState, event: LedgerEvent): ReduceResult {
       break;
     }
     case 'stream.online': {
+      if (s.streamId === event.streamId) break;
       s.streamId = event.streamId;
       s.streamStartedAt = event.at;
       for (const m of METRICS) s.counters[m] = 0;

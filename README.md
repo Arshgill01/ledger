@@ -13,7 +13,7 @@ npm install
 npm run demo
 ```
 
-Open http://localhost:3000. Demo mode plays a synthetic stream: scripted transcript lines, fake chat, a fake follow goal and raid. Every surface shows a DEMO badge. Nothing connects to Twitch or OpenAI.
+Open http://localhost:3000. Demo mode plays a synthetic stream: scripted transcript lines, fake chat, a fake follow goal and raid. Every surface shows a DEMO badge. Nothing connects to Twitch or any AI provider.
 
 - Overlay (OBS browser source): http://localhost:3000/overlay
 - Streamer panel: http://localhost:3000/panel
@@ -22,9 +22,15 @@ Open http://localhost:3000. Demo mode plays a synthetic stream: scripted transcr
 ## Live mode
 
 1. Register an app at https://dev.twitch.tv/console/apps with redirect `http://localhost:3000/auth/callback`.
-2. `cp .env.example .env` and fill `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_CHANNEL`, `OPENAI_API_KEY`.
+2. `cp .env.example .env` and fill `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_CHANNEL`. For extraction, use `OPENAI_API_KEY` (default), or set `EXTRACTION_PROVIDER=deepseek` and `DEEPSEEK_API_KEY`. Microphone transcription still requires `OPENAI_API_KEY`.
 3. `npm run dev`, open http://localhost:3000/panel, click **Connect Twitch**, then **Start mic**.
 4. Add http://localhost:3000/overlay as a browser source in OBS (1920x1080, transparent).
+
+Twitch requires two-factor authentication on the developer account before registering an app. Choose a **Confidential** client and complete Ledger's OAuth flow as the same broadcaster named in `TWITCH_CHANNEL`; other accounts are rejected.
+
+To verify Twitch before using AI, set `RECEIPTS_MODE=hybrid` in `.env`. This mode makes no AI calls, even if keys are present in the environment. Use `!iou <promise>` as the broadcaster/mod or log promises from the panel. Microphone transcription and model extraction require live mode. Speech-to-text uses OpenAI `gpt-4o-mini-transcribe`. Promise extraction supports OpenAI `gpt-4.1-mini` or DeepSeek `deepseek-flash` through its Responses API with JSON schema, thinking disabled, and a 1,024-token output limit. DeepSeek cannot replace the speech-to-text step; without an OpenAI key, use typed transcripts or `!iou`. Local transcription is not integrated.
+
+The server is intended for a trusted local machine. Its panel and mutation API currently have no access control; do not expose it through a public tunnel until those routes are protected. Public sharing requires a separate access-control change.
 
 ## How it works
 
@@ -34,7 +40,7 @@ Twitch EventSub (follows / subs / bits / raid / stream.offline) → condition pr
 DUE → Send Chat Message with pin:true + Create Clip (the receipt) → chat votes !paid / !cap → PAID or WELCHED
 ```
 
-The engine (`src/engine/ledger.ts`) is a pure reducer with tests (`npm test`). Everything with side effects (Twitch, OpenAI, files) lives outside it.
+The engine (`src/engine/ledger.ts`) is a pure reducer with tests (`npm test`). Everything with side effects (Twitch, AI providers, files) lives outside it.
 
 ## Chat commands
 
@@ -42,4 +48,17 @@ The engine (`src/engine/ledger.ts`) is a pure reducer with tests (`npm test`). E
 
 ## Status
 
-First cut complete: demo mode, engine, Twitch layer, extraction, overlay, panel, public ledger. Live-mode verification pending. Start with `docs/HANDOFF.md` (gaps, risks, open decisions), then `docs/CODEX_PLAN.md` and `docs/BUILD_LOG.md`.
+Codex handoff in progress: regression coverage includes concurrent persistence, broadcaster-only OAuth, coalesced token refresh, duplicate stream events, synthetic-mode isolation, and EventSub socket handoff/deduplication. On Nov 2, real broadcaster OAuth, all seven EventSub subscriptions, `!iou`, `!owed`, `!due`, chat pinning, test cleanup, and restart persistence passed on `clasher1110`. Real clips, follow events, and microphone latency remain unverified. Start cloud work with `docs/HANDOFF.md`; see `docs/BUILD_LOG.md` and `docs/EXECPLAN.md` for progress and remaining gaps.
+
+## Extraction evaluation
+
+`npm test` uses mocks and makes no paid model calls. The separate DeepSeek evaluation sends synthetic transcripts to the real provider. It stops at the first failure, has no retries, and saves requests, responses, hashes, usage and timing under gitignored `data/evals/`.
+
+```sh
+mkdir -p data/evals
+node --import tsx scripts/eval-extraction.mjs --prepare data/evals/UNIQUE-RUN
+# Review manifest.json before this explicit paid command (12 calls, ceiling $0.25).
+node --import tsx scripts/eval-extraction.mjs --run data/evals/UNIQUE-RUN
+```
+
+Nov 2 result: 12/12 cases passed, including the demo follow promise, count metrics, time/event conditions, quoted chat, sarcasm, duplicate suppression, and prompt injection. Usage was 8,970 input / 531 output tokens, at most $0.0033282 at peak cache-miss rates; extraction latency was 0.91–3.18 s. These synthetic text cases do not establish general accuracy or end-to-end microphone latency. Rates: [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/).

@@ -21,11 +21,14 @@ const env = (k: string, d = ''): string => (process.env[k] ?? d).trim();
 
 const hasTwitch = !!(env('TWITCH_CLIENT_ID') && env('TWITCH_CLIENT_SECRET') && env('TWITCH_CHANNEL'));
 const hasOpenAI = !!env('OPENAI_API_KEY');
+const extractionProvider = env('EXTRACTION_PROVIDER', 'openai');
+if (extractionProvider !== 'openai' && extractionProvider !== 'deepseek') throw new Error('EXTRACTION_PROVIDER must be openai or deepseek');
+const hasExtraction = extractionProvider === 'deepseek' ? !!env('DEEPSEEK_API_KEY') : hasOpenAI;
 
 function detectMode(): Mode {
   const forced = env('RECEIPTS_MODE') as Mode | '';
   if (forced === 'demo' || forced === 'live' || forced === 'hybrid') return forced;
-  if (hasTwitch && hasOpenAI) return 'live';
+  if (hasTwitch && hasExtraction) return 'live';
   if (hasTwitch) return 'hybrid';
   return 'demo';
 }
@@ -54,8 +57,12 @@ export const config = {
   },
   openai: {
     apiKey: env('OPENAI_API_KEY'),
-    extractModel: env('OPENAI_EXTRACT_MODEL', 'gpt-4.1-mini'),
     transcribeModel: env('OPENAI_TRANSCRIBE_MODEL', 'gpt-4o-mini-transcribe'),
+  },
+  extraction: {
+    provider: extractionProvider as 'openai' | 'deepseek',
+    apiKey: extractionProvider === 'deepseek' ? env('DEEPSEEK_API_KEY') : env('OPENAI_API_KEY'),
+    model: extractionProvider === 'deepseek' ? env('DEEPSEEK_EXTRACT_MODEL', 'deepseek-flash') : env('OPENAI_EXTRACT_MODEL', 'gpt-4.1-mini'),
   },
   voteQuorum: Number(env('VOTE_QUORUM', '5')),
   extractionMode: (env('EXTRACTION_MODE', 'auto') === 'approval' ? 'approval' : 'auto') as 'auto' | 'approval',

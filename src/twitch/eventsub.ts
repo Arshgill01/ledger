@@ -17,13 +17,14 @@ export type TwitchEvent =
   | { type: 'metric'; metric: 'subs' | 'follows' | 'bits' | 'raiders'; delta?: number; value?: number }
   | { type: 'stream.online'; streamId: string }
   | { type: 'stream.offline' }
+  | { type: 'connection'; connected: boolean }
   | { type: 'status'; text: string };
 
 interface Frame {
-  metadata: { message_type: string; subscription_type?: string };
+  metadata: { message_type: string; subscription_type?: string; message_id?: string };
   payload: {
     session?: { id: string; reconnect_url?: string; keepalive_timeout_seconds?: number };
-    subscription?: { type: string };
+    subscription?: { type: string; status?: string };
     event?: Record<string, unknown>;
   };
 }
@@ -35,6 +36,9 @@ export class EventSubClient {
   private keepaliveTimer?: NodeJS.Timeout;
   private keepaliveMs = 15_000;
   private closed = false;
+  private reconnectTimer?: NodeJS.Timeout;
+  private readonly sockets = new Set<WebSocket>();
+  private readonly seen = new Set<string>();
 
   constructor(
     private readonly helix: Helix,
@@ -43,6 +47,7 @@ export class EventSubClient {
   ) {}
 
   start(url = WS_URL): void {
+    this.stop();
     this.closed = false;
     this.connect(url, false);
   }
@@ -50,20 +55,40 @@ export class EventSubClient {
   stop(): void {
     this.closed = true;
     if (this.keepaliveTimer) clearTimeout(this.keepaliveTimer);
-    this.ws?.close();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    for (const ws of this.sockets) ws.terminate();
+    this.sockets.clear();
+    this.ws = undefined;
+    this.onEvent({ type: 'connection', connected: false });
   }
 
   private connect(url: string, isReconnect: boolean): void {
     const ws = new WebSocket(url);
     const old = this.ws;
-    ws.on('message', (data) => this.handle(ws, JSON.parse(data.toString()) as Frame, isReconnect, old));
+    this.sockets.add(ws);
+    ws.on('message', (data) => {
+      if (this.closed) return;
+      try {
+        const frame = JSON.parse(data.toString()) as Frame;
+        void this.handle(ws, frame, isReconnect, old).catch((err) => {
+          this.onEvent({ type: 'status', text: `EventSub frame failed: ${(err as Error).message}` });
+        });
+      } catch {
+        this.onEvent({ type: 'status', text: 'EventSub ignored malformed JSON' });
+      }
+    });
     ws.on('close', () => {
+      this.sockets.delete(ws);
       if (this.ws !== ws || this.closed) return;
+      if (this.keepaliveTimer) clearTimeout(this.keepaliveTimer);
+      for (const remaining of this.sockets) remaining.terminate();
+      this.onEvent({ type: 'connection', connected: false });
       this.onEvent({ type: 'status', text: 'EventSub socket closed, reconnecting in 3s' });
-      setTimeout(() => !this.closed && this.connect(WS_URL, false), 3000);
+      this.reconnectTimer = setTimeout(() => !this.closed && this.connect(WS_URL, false), 3000);
     });
     ws.on('error', (err) => this.onEvent({ type: 'status', text: `EventSub error: ${err.message}` }));
     this.ws = ws;
+    this.bumpKeepalive();
   }
 
   private bumpKeepalive(): void {
@@ -75,19 +100,23 @@ export class EventSubClient {
   }
 
   private async handle(ws: WebSocket, frame: Frame, isReconnect: boolean, old?: WebSocket): Promise<void> {
-    this.bumpKeepalive();
+    if (this.closed || !this.sockets.has(ws)) return;
+    if (this.ws === ws) this.bumpKeepalive();
     const t = frame.metadata.message_type;
     if (t === 'session_welcome') {
       const session = frame.payload.session!;
       this.keepaliveMs = (session.keepalive_timeout_seconds ?? 10) * 1000;
+      this.bumpKeepalive();
       if (isReconnect) {
         old?.close();
+        this.onEvent({ type: 'connection', connected: true });
         this.onEvent({ type: 'status', text: 'EventSub reconnected' });
         return;
       }
       try {
-        await this.subscribeAll(session.id);
-        this.onEvent({ type: 'status', text: 'EventSub subscribed' });
+        const ready = await this.subscribeAll(session.id);
+        if (this.closed || this.ws !== ws) return;
+        this.onEvent({ type: 'connection', connected: ready });
       } catch (err) {
         this.onEvent({ type: 'status', text: `EventSub subscribe failed: ${(err as Error).message}` });
       }
@@ -98,10 +127,22 @@ export class EventSubClient {
       if (url) this.connect(url, true);
       return;
     }
-    if (t === 'notification') this.notify(frame.payload.subscription!.type, frame.payload.event ?? {});
+    if (t === 'revocation') {
+      this.onEvent({ type: 'connection', connected: false });
+      this.onEvent({ type: 'status', text: `EventSub revoked ${frame.payload.subscription?.type}: ${frame.payload.subscription?.status}` });
+    }
+    if (t === 'notification') {
+      const id = frame.metadata.message_id;
+      if (id && this.seen.has(id)) return;
+      if (id) {
+        this.seen.add(id);
+        if (this.seen.size > 1000) this.seen.delete(this.seen.values().next().value!);
+      }
+      this.notify(frame.payload.subscription!.type, frame.payload.event ?? {});
+    }
   }
 
-  private async subscribeAll(sessionId: string): Promise<void> {
+  private async subscribeAll(sessionId: string): Promise<boolean> {
     const b = this.ids.broadcasterId;
     const u = this.ids.userId;
     const subs: [string, string, Record<string, string>][] = [
@@ -117,6 +158,9 @@ export class EventSubClient {
     results.forEach((r, i) => {
       if (r.status === 'rejected') this.onEvent({ type: 'status', text: `subscribe ${subs[i][0]} failed: ${(r.reason as Error).message}` });
     });
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    this.onEvent({ type: 'status', text: `EventSub subscriptions: ${succeeded}/${subs.length} active` });
+    return results.every((r) => r.status === 'fulfilled');
   }
 
   private notify(type: string, ev: Record<string, unknown>): void {

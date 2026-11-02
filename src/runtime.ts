@@ -25,6 +25,7 @@ export class Runtime extends EventEmitter {
   readonly chat: ChatLine[] = [];
   readonly status: string[] = [];
   twitchConnected = false;
+  private dispatchQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly store: Store,
@@ -77,10 +78,16 @@ export class Runtime extends EventEmitter {
     return boardText(this.state, this.publicUrl);
   }
 
-  async dispatch(event: LedgerEvent): Promise<Effect[]> {
+  dispatch(event: LedgerEvent): Promise<Effect[]> {
+    const pending = this.dispatchQueue.then(() => this.apply(event));
+    this.dispatchQueue = pending.catch(() => {});
+    return pending;
+  }
+
+  private async apply(event: LedgerEvent): Promise<Effect[]> {
     const { state, effects } = reduce(this.state, event);
-    this.state = state;
     await this.store.save(state);
+    this.state = state;
     this.emit('state', state);
     for (const e of effects) void this.execute(e);
     return effects;

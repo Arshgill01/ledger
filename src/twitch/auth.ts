@@ -16,11 +16,13 @@ export interface AuthConfig {
   redirectUri: string;
   scopes: string[];
   dataDir: string;
+  channel: string;
 }
 
 export class TwitchAuth {
   private tokens?: TokenSet;
   private pendingState?: string;
+  private refreshing?: Promise<TokenSet>;
   constructor(private readonly cfg: AuthConfig) {}
 
   private get file(): string {
@@ -70,6 +72,9 @@ export class TwitchAuth {
     if (!res.ok) throw new Error(`token exchange failed: ${res.status} ${await res.text()}`);
     const json = (await res.json()) as { access_token: string; refresh_token: string; expires_in: number; scope: string[] };
     const who = await validate(json.access_token);
+    if (who.login.toLowerCase() !== this.cfg.channel.toLowerCase()) {
+      throw new Error(`Connect Twitch as broadcaster ${this.cfg.channel}, not ${who.login}`);
+    }
     this.tokens = {
       accessToken: json.access_token,
       refreshToken: json.refresh_token,
@@ -79,19 +84,21 @@ export class TwitchAuth {
       login: who.login,
     };
     await mkdir(this.cfg.dataDir, { recursive: true });
-    await writeFile(this.file, JSON.stringify(this.tokens, null, 2));
+    await writeFile(this.file, JSON.stringify(this.tokens, null, 2), { mode: 0o600 });
     return this.tokens;
   }
 
-  async refresh(): Promise<TokenSet> {
-    if (!this.tokens) throw new Error('not authenticated');
+  refresh(): Promise<TokenSet> {
+    if (this.refreshing) return this.refreshing;
+    if (!this.tokens) return Promise.reject(new Error('not authenticated'));
     const body = new URLSearchParams({
       client_id: this.cfg.clientId,
       client_secret: this.cfg.clientSecret,
       grant_type: 'refresh_token',
       refresh_token: this.tokens.refreshToken,
     });
-    return this.exchange(body);
+    this.refreshing = this.exchange(body).finally(() => { this.refreshing = undefined; });
+    return this.refreshing;
   }
 
   async accessToken(): Promise<string> {

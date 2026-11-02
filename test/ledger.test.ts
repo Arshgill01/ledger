@@ -115,3 +115,12 @@ test('board text lists DUE first', () => {
   assert.ok(text.startsWith('IOU #2'));
   assert.ok(/IOU #1/.test(text));
 });
+
+test('duplicate stream.online preserves earned progress and original start time', () => {
+  let s = reduce(withPromise(), { type: 'stream.online', streamId: 's1', at }).state;
+  s = reduce(s, { type: 'metric', metric: 'subs', delta: 7, at }).state;
+  const r = reduce(s, { type: 'stream.online', streamId: 's1', at: '2026-11-01T10:01:00.000Z' });
+  assert.equal(r.state.counters.subs, 7);
+  assert.equal(r.state.streamStartedAt, at);
+  assert.equal(r.state.ious[0].condition.kind === 'count' && r.state.ious[0].condition.progress, 7);
+});

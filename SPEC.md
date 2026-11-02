@@ -28,7 +28,7 @@ Streamers make promises constantly. *"If we hit 50 subs tonight I'll eat the gho
 2. **Codex**: the Codex session ID of the main build thread is a required submission field, and "how well does it use Codex" is a judged criterion. The main implementation must happen in a Codex thread and the video must show it.
 3. **Must run on a non-Affiliate Twitch account.** Polls, Predictions, Channel Points, Hype Train, Power-ups, and Tier 2/3-only features (GIFs in chat) are out. Chat, EventSub, raids, clips, pinned messages, announcements are in.
 4. **Must be demoable solo**: one streamer, one mic, one OBS, a browser. No dependency on real raids or a crowd.
-5. **Must run from a fresh clone with no keys** in a clearly labelled demo mode (judges test repos). Live mode needs a Twitch app + OpenAI key.
+5. **Must run from a fresh clone with no keys** in a clearly labelled demo mode (judges test repos). Live mode needs a Twitch app + an extraction provider key (OpenAI or DeepSeek); microphone transcription additionally needs an OpenAI key.
 6. **Repo contains no secrets.** `.env` only, `.env.example` committed.
 
 ## 3. Personas
@@ -103,7 +103,7 @@ type Condition =
   - Normalize to first person, present tense, no trailing punctuation.
   - Never re-emit a promise already in the open list (fuzzy match by meaning).
   - `confidence` 0-1. Auto mode logs ≥ 0.7; below that goes to `PENDING`.
-- Model: default `gpt-4.1-mini` via Chat Completions with `response_format: json_schema`. Swap freely if cheaper/faster/better.
+- Model: default `gpt-4.1-mini` via Chat Completions with `response_format: json_schema`. Optional `EXTRACTION_PROVIDER=deepseek` uses `deepseek-flash` via Responses with JSON schema and thinking disabled. Both paths cap output at 1,024 tokens. Swap freely if cheaper/faster/better.
 - Transcription: default is browser `MediaRecorder` chunks (4 s, webm/opus) POSTed to the server, server calls OpenAI `audio.transcriptions` (`gpt-4o-mini-transcribe`). Target end-to-end stamp latency ≤ 6 s. Upgrade path: OpenAI Realtime transcription over WebSocket for ≤ 2 s. Either is acceptable; the stamp must visibly land while the moment is still fresh.
 
 ### 4.4 Condition evaluation
@@ -157,11 +157,11 @@ Replies use `reply_parent_message_id` so they thread under the asker. Rate-limit
 
 ## 7. Modes **[HARD]**
 
-| Mode | Trigger | Twitch | OpenAI | Purpose |
+| Mode | Trigger | Twitch | AI providers | Purpose |
 |---|---|---|---|---|
-| `live` | `.env` has Twitch + OpenAI keys | real EventSub WS + Helix | real | The real product and the demo video |
+| `live` | `.env` has Twitch + selected extraction provider keys | real EventSub WS + Helix | real | The real product and the demo video |
 | `demo` | `npm run demo` or `RECEIPTS_MODE=demo` | none; fixture emits fake chat/sub/raid events on a timeline | none; fixture carries pre-extracted promises | Judges run it with zero setup. Overlay/panel/ledger show "DEMO" badge. |
-| `hybrid` | Twitch keys but no OpenAI key | real | none; promises only via `!iou` and panel | Debug Twitch wiring without spending tokens |
+| `hybrid` | Twitch keys but no selected extraction provider key (or explicitly forced) | real | none; promises only via `!iou` and panel | Debug Twitch wiring without spending tokens |
 
 Demo mode must be *honest*: labelled on every surface, and the README says exactly what is synthetic.
 
@@ -203,7 +203,7 @@ src/
   engine/types.ts       IOU, Condition, LedgerEvent
   engine/ledger.ts      pure reducer: evaluate(state, event) → {state, effects}
   engine/store.ts       Store interface + JSON implementation
-  engine/extract.ts     transcript → promises (OpenAI)
+  engine/extract.ts     transcript → promises (OpenAI or DeepSeek)
   engine/transcribe.ts  audio chunk → text (OpenAI)
   demo/fixture.ts       scripted timeline for demo mode
 public/

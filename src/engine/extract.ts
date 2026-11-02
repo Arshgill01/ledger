@@ -32,7 +32,7 @@ export const PROMISE_SCHEMA = {
   },
 } as const;
 
-const SYSTEM = `You extract promises a Twitch streamer makes to their chat from a live transcript of the streamer's microphone.
+export const SYSTEM = `You extract promises a Twitch streamer makes to their chat from a live transcript of the streamer's microphone.
 
 A promise is a commitment by the streamer about their own future behaviour, usually with a stake and often with a condition:
 - "if we hit 50 subs tonight I'll eat the ghost pepper"  -> count condition (subs, 50)
@@ -72,26 +72,46 @@ export function toCondition(r: Raw): Condition {
   }
 }
 
-export async function extractPromises(client: OpenAI, model: string, input: ExtractInput): Promise<ExtractedPromise[]> {
+export async function extractPromises(client: OpenAI, model: string, input: ExtractInput, provider: 'openai' | 'deepseek' = 'openai'): Promise<ExtractedPromise[]> {
   if (!input.transcript.trim()) return [];
   const open = input.openIous.length ? input.openIous.map((i) => `#${i.id} ${i.text}`).join('\n') : '(none)';
   const ctx = [input.context?.title && `Stream title: ${input.context.title}`, input.context?.game && `Category: ${input.context.game}`, `Now: ${input.context?.now ?? new Date().toISOString()}`].filter(Boolean).join('\n');
-  const res = await client.chat.completions.create({
-    model,
-    temperature: 0.1,
-    messages: [
-      { role: 'system', content: SYSTEM },
-      { role: 'user', content: `${ctx}\n\nOPEN IOUs (do not repeat):\n${open}\n\nTRANSCRIPT (most recent last):\n${input.transcript}` },
-    ],
-    response_format: { type: 'json_schema', json_schema: PROMISE_SCHEMA as unknown as OpenAI.ResponseFormatJSONSchema['json_schema'] },
-  });
-  const content = res.choices[0]?.message?.content ?? '{"promises":[]}';
-  let parsed: { promises: Raw[] };
-  try {
-    parsed = JSON.parse(content) as { promises: Raw[] };
-  } catch {
-    return [];
+  const prompt = `${ctx}\n\nOPEN IOUs (do not repeat):\n${open}\n\nTRANSCRIPT (most recent last):\n${input.transcript}`;
+  let content: string;
+  if (provider === 'deepseek') {
+    const res = await client.responses.create({
+      model,
+      instructions: SYSTEM,
+      input: prompt,
+      reasoning: { effort: 'none' },
+      temperature: 0.1,
+      max_output_tokens: 1024,
+      text: { format: { type: 'json_schema', ...PROMISE_SCHEMA } },
+      store: false,
+    });
+    if (res.status !== 'completed') throw new Error('Promise extraction did not complete');
+    content = res.output_text;
+  } else {
+    const res = await client.chat.completions.create({
+      model,
+      temperature: 0.1,
+      max_completion_tokens: 1024,
+      messages: [
+        { role: 'system', content: SYSTEM },
+        { role: 'user', content: prompt },
+      ],
+      response_format: { type: 'json_schema', json_schema: PROMISE_SCHEMA as unknown as OpenAI.ResponseFormatJSONSchema['json_schema'] },
+    });
+    if (res.choices[0]?.finish_reason !== 'stop') throw new Error('Promise extraction did not complete');
+    content = res.choices[0]?.message?.content ?? '';
   }
+  const parsed: { promises: Raw[] } = JSON.parse(content);
+  if (!Array.isArray(parsed?.promises) || parsed.promises.some((p) =>
+    !p || !['text', 'quote', 'stake', 'condition_kind', 'metric', 'deadline', 'label'].every((k) => typeof p[k as keyof Raw] === 'string')
+    || !Number.isFinite(p.confidence) || !Number.isInteger(p.target)
+    || !['count', 'time', 'event', 'none'].includes(p.condition_kind)
+    || (p.condition_kind === 'count' && (!['subs', 'follows', 'bits', 'raiders', 'viewers'].includes(p.metric) || p.target < 1))
+  )) throw new Error('Invalid promise extraction response');
   return (parsed.promises ?? [])
     .filter((p) => p.text && p.text.trim().length > 2)
     .map((p) => ({
