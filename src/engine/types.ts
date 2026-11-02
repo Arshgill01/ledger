@@ -74,7 +74,7 @@ export type LedgerEvent =
   | { type: 'settings'; patch: Partial<LedgerState['settings']>; at: string };
 
 export type Effect =
-  | { type: 'say'; text: string; replyTo?: string; pin?: boolean }
+  | { type: 'say'; text: string; replyTo?: string; pin?: boolean; iouId?: number }
   | { type: 'clip'; iouId: number; purpose: 'due' | 'payoff' }
   | { type: 'overlay'; event: 'stamp' | 'due' | 'paid' | 'welched' | 'void' | 'progress' | 'vote' | 'pending'; iou: IOU }
   | { type: 'log'; text: string };

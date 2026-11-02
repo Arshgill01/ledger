@@ -41,8 +41,22 @@ input[type=number], input[type=text] { background: var(--bg); color: var(--text)
 .hint { color: var(--text-2); font-size: 12px; }
 .demo-only { display: none; } body.demo .demo-only { display: initial; }
 .live-only { display: initial; } body.demo .live-only { display: none; }
+#status .err, .mic-err { color: #ff8a80; }
+.mic-err { font-size: 12px; margin: 4px 0; }
+#signin { max-width: 460px; margin: 12vh auto; }
+#signin input { width: 100%; box-sizing: border-box; margin: 10px 0; }
 </style></head><body>
 <div id="badge" class="badge-demo" hidden>Demo<small>synthetic stream</small></div>
+<section id="signin" hidden>
+  <h2>Operator sign-in</h2>
+  <p class="hint">The panel controls the ledger and shows the mic transcript, so it needs the operator key. Find it on the streaming machine in <code>data/operator.key</code> (or your <code>OPERATOR_KEY</code>). The overlay and public ledger need no sign-in.</p>
+  <form id="signin-form">
+    <input id="key" type="password" autocomplete="current-password" placeholder="operator key">
+    <button class="primary" type="submit">Sign in</button>
+    <span id="signin-err" class="mic-err"></span>
+  </form>
+</section>
+<div id="app" hidden>
 <header>
   <h1>Ledger</h1>
   <span id="pill-mode" class="pill">mode</span>
@@ -65,6 +79,7 @@ input[type=number], input[type=text] { background: var(--bg); color: var(--text)
         <select id="sel-mode"><option value="auto">auto (stamp immediately)</option><option value="approval">approval (queue first)</option></select>
       </label>
     </div>
+    <div id="mic-err" class="mic-err" hidden></div>
     <div id="transcript"></div>
     <div class="row" style="margin-top:10px">
       <textarea id="say" placeholder="No mic? Type what the streamer said and press Enter. e.g. “if we hit 10 follows tonight I'll eat the ghost pepper”"></textarea>
@@ -105,6 +120,7 @@ input[type=number], input[type=text] { background: var(--bg); color: var(--text)
     <h2 style="margin-top:14px">Status</h2>
     <div id="status"></div>
   </section>
+</div>
 </div>
 <script src="/panel/panel.js"></script>
 </body></html>

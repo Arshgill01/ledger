@@ -35,6 +35,13 @@ test('demo serves all surfaces and extracts typed promises without external requ
     }
     const posted = await fetch(`${base}/api/transcript`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'I owe chat a song' }) });
     assert.equal(posted.status, 200, await posted.text());
+    // Demo needs no operator sign-in; the public feed stays redacted.
+    assert.equal((await (await fetch(`${base}/api/session`)).json()).operator, true);
+    const pub = await (await fetch(`${base}/api/public/state`)).json();
+    assert.equal(pub.mode, 'demo');
+    assert.equal(pub.transcript, undefined);
+    assert.ok(pub.ious.some((i: { text: string }) => /song/.test(i.text)));
+    assert.equal((await fetch(`${base}/api/event`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example' }, body: JSON.stringify({ type: 'stream.offline' }) })).status, 403);
     const snapshot = await (await fetch(`${base}/api/state`)).json();
     assert.equal(snapshot.mode, 'demo');
     assert.ok(snapshot.state.ious.some((i: { text: string }) => /song/.test(i.text)));

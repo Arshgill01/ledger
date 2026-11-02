@@ -21,8 +21,8 @@
     </div>`;
   }
 
-  function render(s, mode) {
-    document.getElementById('badge').hidden = mode !== 'demo';
+  function render(s) {
+    document.getElementById('badge').hidden = s.mode !== 'demo';
     document.getElementById('title').textContent = `${s.channel}'s Ledger`;
     const by = (st) => s.ious.filter((i) => i.state === st).sort((a, b) => b.id - a.id);
     for (const st of ['open', 'due', 'paid', 'welched']) {
@@ -32,8 +32,12 @@
     }
   }
 
-  fetch('/api/state').then((r) => r.json()).then((m) => render(m.state, m.mode));
-  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
-  let mode = 'live';
-  ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === 'snapshot') { mode = m.mode; render(m.state, mode); } if (m.type === 'state') render(m.state, mode); };
+  // Public, read-only feed. Reconnects so a shared link keeps updating through server restarts.
+  fetch('/api/public/state').then((r) => r.json()).then(render);
+  function connect() {
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type === 'snapshot' || m.type === 'state') render(m.snapshot); };
+    ws.onclose = () => setTimeout(connect, 3000);
+  }
+  connect();
 })();

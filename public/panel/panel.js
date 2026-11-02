@@ -3,7 +3,19 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let snap = null;
 
-  const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  // Every operator request reports failures in the status feed instead of failing silently.
+  async function post(url, body) {
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 401) { showSignIn(); return j; }
+      if (!r.ok) addStatus(`⚠ ${url} failed (${r.status}): ${j.error || r.statusText}`, true);
+      return j;
+    } catch (err) {
+      addStatus(`⚠ ${url} failed: ${err.message}`, true);
+      return {};
+    }
+  }
   const dispatch = (event) => post('/api/event', event);
 
   function condText(c) {
@@ -51,9 +63,10 @@
     $('chat').appendChild(el);
     $('chat').scrollTop = 1e9;
   }
-  function addStatus(text) {
+  function addStatus(text, error) {
     const el = document.createElement('div');
     el.textContent = text;
+    if (error) el.className = 'err';
     $('status').appendChild(el);
     $('status').scrollTop = 1e9;
   }
@@ -70,21 +83,51 @@
     $('chat').innerHTML = ''; m.chat.forEach(addChat);
     $('status').innerHTML = ''; m.status.forEach(addStatus);
     renderIous();
+    renderSpeech(m.speech);
   }
 
+  // ---- operator sign-in. The key never lives in this file; it is pasted once and exchanged for an HttpOnly cookie.
+  function showSignIn() {
+    $('signin').hidden = false;
+    $('app').hidden = true;
+    $('key').focus();
+  }
+  async function checkSession() {
+    try {
+      const s = await fetch('/api/session').then((r) => r.json());
+      if (!s.operator) { showSignIn(); return false; }
+      $('signin').hidden = true;
+      $('app').hidden = false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  $('signin-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const r = await fetch('/api/operator/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: $('key').value }) });
+    if (!r.ok) { $('signin-err').textContent = (await r.json().catch(() => ({}))).error || `sign-in failed (${r.status})`; return; }
+    $('key').value = '';
+    $('signin-err').textContent = '';
+    if (await checkSession()) connect();
+  };
+
+  let ws = null;
   function connect() {
-    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    if (ws && ws.readyState <= 1) return;
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/operator`);
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
       if (m.type === 'snapshot') applySnapshot(m);
+      else if (m.type === 'speech') { if (snap) snap.speech = m.speech; renderSpeech(m.speech); }
       else if (m.type === 'state') { snap.state = m.state; renderIous(); }
       else if (m.type === 'transcript') addTranscript(m.line);
       else if (m.type === 'chat') addChat(m.line);
       else if (m.type === 'status') { addStatus(m.text); if (snap) { snap.twitchConnected = m.twitchConnected; $('pill-twitch').textContent = `twitch: ${m.twitchConnected ? 'connected' : snap.mode === 'demo' ? 'simulated' : 'not connected'}`; $('pill-twitch').classList.toggle('on', m.twitchConnected); } }
     };
-    ws.onclose = () => setTimeout(connect, 1500);
+    ws.onclose = () => setTimeout(async () => { if (await checkSession()) connect(); }, 1500);
   }
-  connect();
+  checkSession().then((ok) => ok && connect());
 
   $('ious').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-act]');
@@ -96,7 +139,7 @@
   $('btn-manual').onclick = () => {
     const text = $('manual').value.trim();
     if (!text) return;
-    dispatch({ type: 'iou.manual', text, actor: { userId: 'panel', login: snap.channel, isBroadcaster: true, isMod: true } });
+    dispatch({ type: 'iou.manual', text });
     $('manual').value = '';
   };
   $('say').addEventListener('keydown', (e) => {
@@ -125,41 +168,128 @@
   };
   $('fake-chat').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-fake-chat').onclick(); });
 
-  // Mic capture: 4s MediaRecorder chunks → /api/audio
-  let rec = null, stream = null, meterTimer = null;
-  $('btn-mic').onclick = async () => {
-    if (rec) {
-      rec.stop(); stream.getTracks().forEach((t) => t.stop()); rec = null; stream = null;
-      clearInterval(meterTimer); $('meter').style.width = '0';
-      $('btn-mic').textContent = 'Start mic'; $('mic-state').textContent = 'off';
+  // ---- Mic capture: 4 s MediaRecorder segments → /api/audio.
+  // Uploads go one at a time (keeps recording order) through a small bounded queue. The server queues
+  // and answers 202 quickly; 429 means its backlog is full and the segment was dropped. Every failure
+  // is shown, never swallowed.
+  const MAX_WAITING_UPLOADS = 3;
+  const mic = { session: null, stream: null, ctx: null, meterTimer: null, rec: null, mime: '', uploads: [], uploading: false, lost: 0, seenFailed: Infinity };
+
+  function micState(text) { $('mic-state').textContent = text; }
+  // Warnings stay visible (with time) until the next mic start, so a drop isn't missed.
+  function micError(text) {
+    $('mic-err').textContent = text ? `${new Date().toLocaleTimeString()} ${text}` : '';
+    $('mic-err').hidden = !text;
+    if (text) addStatus(`⚠ mic: ${text}`, true);
+  }
+  function renderSpeech(sp) {
+    if (!sp) return;
+    const btn = $('btn-mic');
+    if (!sp.available) {
+      btn.disabled = true;
+      btn.title = sp.reason || 'Microphone transcription is not configured';
+      if (!mic.session) micState(sp.reason || 'unavailable');
       return;
     }
+    btn.disabled = false;
+    btn.title = '';
+    if (mic.session) {
+      // sp.dropped counts server-side (429) drops; mic.lost counts segments the browser couldn't even upload.
+      micState(`listening · server queue ${sp.pending}/${sp.capacity}${sp.busy ? ' · transcribing' : ''} · done ${sp.processed} · dropped ${sp.dropped + mic.lost} · failed ${sp.failed}`);
+    }
+    if (sp.failed > mic.seenFailed) {
+      mic.seenFailed = sp.failed;
+      micError(`transcription/extraction failed: ${sp.lastError}`);
+    }
+  }
+
+  function queueUpload(blob, session) {
+    if (mic.uploads.length >= MAX_WAITING_UPLOADS) {
+      mic.lost++;
+      micError('uploads are backed up (network?): dropped a 4 s segment');
+      return;
+    }
+    mic.uploads.push({ blob, session });
+    void pumpUploads();
+  }
+  async function pumpUploads() {
+    if (mic.uploading) return;
+    mic.uploading = true;
+    while (mic.uploads.length) {
+      const { blob, session } = mic.uploads.shift();
+      try {
+        const r = await fetch('/api/audio', { method: 'POST', headers: { 'Content-Type': blob.type, 'X-Mic-Session': session }, body: blob });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 429) micError('speech backend is behind: a 4 s segment was dropped');
+        else if (r.status === 401) { showSignIn(); stopMic(); }
+        else if (!r.ok) { mic.lost++; micError(`audio upload failed (${r.status}): ${j.error || r.statusText}`); }
+      } catch (err) {
+        mic.lost++;
+        micError(`audio upload failed: ${err.message}`);
+      }
+    }
+    mic.uploading = false;
+  }
+
+  function stopMic() {
+    if (!mic.session) return;
+    mic.session = null; // the in-flight segment still uploads (it is real speech); no new segment starts
+    if (mic.rec && mic.rec.state !== 'inactive') mic.rec.stop();
+    mic.rec = null;
+    mic.stream.getTracks().forEach((t) => t.stop());
+    mic.stream = null;
+    clearInterval(mic.meterTimer);
+    mic.ctx.close().catch(() => {});
+    mic.ctx = null;
+    $('meter').style.width = '0';
+    $('btn-mic').textContent = 'Start mic';
+    micState('off');
+  }
+
+  function startSegment(session) {
+    if (mic.session !== session) return;
+    let r;
+    try {
+      r = new MediaRecorder(mic.stream, { mimeType: mic.mime });
+    } catch (err) {
+      micError(`recorder failed: ${err.message}`);
+      stopMic();
+      return;
+    }
+    const parts = [];
+    r.ondataavailable = (e) => { if (e.data.size) parts.push(e.data); };
+    r.onerror = (e) => micError(`recorder error: ${e.error ? e.error.message : 'unknown'}`);
+    r.onstop = () => {
+      const blob = new Blob(parts, { type: mic.mime });
+      if (blob.size > 2000) queueUpload(blob, session);
+      startSegment(session); // no-op once this session was stopped or replaced
+    };
+    r.start();
+    mic.rec = r;
+    setTimeout(() => { if (r.state !== 'inactive') r.stop(); }, 4000);
+  }
+
+  $('btn-mic').onclick = async () => {
+    if (mic.session) { stopMic(); return; }
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find((m) => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+    if (!mime) { micError('this browser cannot record audio segments (MediaRecorder unsupported)'); return; }
+    let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     } catch (err) {
-      addStatus(`mic permission failed: ${err.message}`);
+      micError(`mic permission failed: ${err.message}`);
       return;
     }
-    const ctx = new AudioContext();
-    const src = ctx.createMediaStreamSource(stream);
-    const an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an);
+    const session = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    Object.assign(mic, { session, stream, mime, lost: 0, seenFailed: snap && snap.speech ? snap.speech.failed : 0 });
+    micError('');
+    mic.ctx = new AudioContext();
+    const an = mic.ctx.createAnalyser(); an.fftSize = 512;
+    mic.ctx.createMediaStreamSource(stream).connect(an);
     const buf = new Uint8Array(an.frequencyBinCount);
-    meterTimer = setInterval(() => { an.getByteTimeDomainData(buf); let s = 0; for (const v of buf) s += Math.abs(v - 128); $('meter').style.width = `${Math.min(100, (s / buf.length) * 3)}%`; }, 100);
-    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-    const startSegment = () => {
-      const r = new MediaRecorder(stream, { mimeType: mime });
-      const parts = [];
-      r.ondataavailable = (e) => e.data.size && parts.push(e.data);
-      r.onstop = async () => {
-        const blob = new Blob(parts, { type: mime });
-        if (blob.size > 2000) fetch('/api/audio', { method: 'POST', headers: { 'Content-Type': mime }, body: blob }).catch(() => {});
-        if (rec) startSegment();
-      };
-      r.start();
-      rec = r;
-      setTimeout(() => r.state !== 'inactive' && r.stop(), 4000);
-    };
-    startSegment();
-    $('btn-mic').textContent = 'Stop mic'; $('mic-state').textContent = 'listening · 4s chunks';
+    mic.meterTimer = setInterval(() => { an.getByteTimeDomainData(buf); let s = 0; for (const v of buf) s += Math.abs(v - 128); $('meter').style.width = `${Math.min(100, (s / buf.length) * 3)}%`; }, 100);
+    startSegment(session);
+    $('btn-mic').textContent = 'Stop mic';
+    micState('listening · 4 s segments');
   };
 })();

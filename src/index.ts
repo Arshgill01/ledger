@@ -5,6 +5,8 @@ import { config } from './config.js';
 import { Runtime, type EffectSink } from './runtime.js';
 import { JsonStore, MemoryStore } from './engine/store.js';
 import { startHttp, type HttpHandlers } from './server/http.js';
+import { loadOrCreateOperatorKey, type AccessPolicy } from './server/access.js';
+import { SpeechQueue } from './speech.js';
 import { DemoSink, FixtureRunner, loadFixture, seededState } from './demo/fixture.js';
 import { heuristicExtract } from './engine/heuristic.js';
 import { extractPromises } from './engine/extract.js';
@@ -28,9 +30,11 @@ async function main(): Promise<void> {
   });
   await rt.init();
 
-  const speechClient = config.mode === 'live' && config.hasOpenAI ? new OpenAI({ apiKey: config.openai.apiKey }) : undefined;
+  // Segments are processed one at a time, so a hung provider call would stall the mic queue. The SDK's
+  // default is a 10-minute timeout with 2 retries; keep each call short and retry speech at most once.
+  const speechClient = config.mode === 'live' && config.hasOpenAI ? new OpenAI({ apiKey: config.openai.apiKey, timeout: 20_000, maxRetries: 1 }) : undefined;
   const extractionClient = config.mode === 'live' && config.extraction.apiKey
-    ? new OpenAI({ apiKey: config.extraction.apiKey, ...(config.extraction.provider === 'deepseek' ? { baseURL: 'https://api.deepseek.com', maxRetries: 0 } : {}) })
+    ? new OpenAI({ apiKey: config.extraction.apiKey, timeout: 30_000, ...(config.extraction.provider === 'deepseek' ? { baseURL: 'https://api.deepseek.com', maxRetries: 0 } : { maxRetries: 1 }) })
     : undefined;
   let streamContext: { title?: string; game?: string } = {};
 
@@ -51,18 +55,33 @@ async function main(): Promise<void> {
   };
 
   if (speechClient) {
-    let busy = false;
-    handlers.onAudio = async (audio, mime) => {
-      if (busy) return;
-      busy = true;
-      try {
-        const text = await transcribeChunk(speechClient, config.openai.transcribeModel, audio, mime, rt.transcript.recent(20_000));
-        if (text) await extractFrom(text, 'speech');
-      } finally {
-        busy = false;
-      }
-    };
+    const speech = new SpeechQueue(async (seg) => {
+      const text = await transcribeChunk(speechClient, config.openai.transcribeModel, seg.audio, seg.mime, rt.transcript.recent(20_000));
+      if (text) await extractFrom(text, 'speech');
+    });
+    speech.on('status', (s) => rt.setSpeech(s));
+    speech.on('dropped', () => rt.log('speech backlog full: dropped a mic segment (transcription/extraction slower than real time)'));
+    speech.on('failed', (err) => rt.log(`speech segment failed: ${(err as Error).message}`));
+    rt.setSpeech(speech.status());
+    handlers.onAudio = (audio, mime, session) => speech.enqueue({ audio, mime, session });
+  } else {
+    rt.setSpeech({
+      ...rt.speech,
+      reason: config.mode === 'demo'
+        ? 'Demo mode: no microphone. Type lines instead.'
+        : config.mode === 'hybrid'
+          ? 'Hybrid mode: AI disabled, no microphone transcription. Type lines or use !iou.'
+          : 'No OPENAI_API_KEY: microphone transcription unavailable. Type lines instead.',
+    });
   }
+
+  let publicOrigin: string | undefined;
+  try {
+    publicOrigin = new URL(config.publicUrl).origin;
+  } catch {
+    throw new Error(`PUBLIC_URL is not a valid URL: ${config.publicUrl}`);
+  }
+  const httpOpts = (access: AccessPolicy) => ({ port: config.port, host: config.host, publicDir: join(root, 'public'), access });
 
   if (fixture) {
     rt.sink = new DemoSink(rt);
@@ -72,7 +91,8 @@ async function main(): Promise<void> {
       messageId: `demo-${Date.now()}`, userId: `demo_${login.toLowerCase()}`, login: login.toLowerCase(), displayName: login,
       text, isBroadcaster: false, isMod: login.toLowerCase() === 'mod',
     });
-    startHttp(rt, handlers, config.port, join(root, 'public'));
+    // Demo: synthetic data only, so the panel needs no sign-in. Origin checks still apply.
+    await startHttp(rt, handlers, httpOpts({ operatorRequired: false, publicOrigin }));
     rt.log('DEMO MODE: synthetic stream, no Twitch, no OpenAI. Everything you see is scripted or typed by you.');
     runner.start();
     return;
@@ -166,7 +186,9 @@ async function main(): Promise<void> {
     pollTimer = setInterval(poll, 60_000);
   }
 
-  startHttp(rt, handlers, config.port, join(root, 'public'));
+  const operatorKey = await loadOrCreateOperatorKey(config.dataDir, config.operatorKey);
+  await startHttp(rt, handlers, httpOpts({ operatorRequired: true, key: operatorKey, publicOrigin }));
+  rt.log(`Panel sign-in: open ${config.publicUrl}/panel and paste the operator key from ${config.operatorKey ? 'OPERATOR_KEY' : `${config.dataDir}/operator.key`}. Overlay and public ledger need no sign-in.`);
   rt.log(`${config.mode.toUpperCase()} MODE for channel ${config.twitch.channel}${extractionClient ? ` (${config.extraction.provider} extraction; microphone ${speechClient ? 'available' : 'unavailable'})` : ' (AI disabled: heuristic extraction + !iou only)'}`);
   await connectTwitch().catch((err) => rt.log(`Twitch connect failed: ${(err as Error).message}`));
 }

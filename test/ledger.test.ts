@@ -63,7 +63,7 @@ test('metric progress moves the card and hitting the target makes it DUE with pi
   const iou = r.state.ious[0];
   assert.equal(iou.state, 'DUE');
   assert.equal((iou.condition as { progress: number }).progress, 50);
-  assert.ok(r.effects.some((e) => e.type === 'say' && e.pin === true && /DUE/.test(e.text)));
+  assert.ok(r.effects.some((e) => e.type === 'say' && e.pin === true && e.iouId === iou.id && /DUE/.test(e.text)));
   assert.ok(r.effects.some((e) => e.type === 'clip' && e.purpose === 'due'));
 });
 

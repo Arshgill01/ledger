@@ -21,8 +21,8 @@ p.tag { color: var(--text-2); margin: 0 0 28px; font-size: 18px; }
   <div id="mode"></div>
 </main>
 <script>
-fetch('/api/state').then(r => r.json()).then(s => {
-  document.getElementById('mode').textContent = `mode: ${s.mode} · channel: ${s.channel} · ${s.state.ious.length} IOUs on file`;
+fetch('/api/public/state').then(r => r.json()).then(s => {
+  document.getElementById('mode').textContent = `mode: ${s.mode} · channel: ${s.channel} · ${s.ious.length} IOUs on file`;
 });
 </script>
 </body></html>

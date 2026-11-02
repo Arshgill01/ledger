@@ -4,6 +4,7 @@ import type { Store } from './engine/store.js';
 import type { Effect, IOU, LedgerEvent, LedgerState, Receipt } from './engine/types.js';
 import { TranscriptWindow } from './engine/transcribe.js';
 import type { Mode } from './config.js';
+import type { SpeechStatus } from './speech.js';
 
 export interface EffectSink {
   say(text: string, opts: { pin?: boolean; replyTo?: string }): Promise<{ messageId?: string } | void>;
@@ -25,6 +26,7 @@ export class Runtime extends EventEmitter {
   readonly chat: ChatLine[] = [];
   readonly status: string[] = [];
   twitchConnected = false;
+  speech: SpeechStatus = { available: false, reason: 'Microphone transcription is not configured.', pending: 0, busy: false, capacity: 0, processed: 0, dropped: 0, stale: 0, failed: 0 };
   private dispatchQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -42,6 +44,7 @@ export class Runtime extends EventEmitter {
     this.state = { ...this.state, settings: { ...this.state.settings, ...this.settings } };
   }
 
+  /** Operator-only view: includes mic transcript, chat, status log and voter ids. Public views come from server/views.ts. */
   snapshot() {
     return {
       mode: this.mode,
@@ -52,7 +55,13 @@ export class Runtime extends EventEmitter {
       transcript: this.transcript.all().slice(-30),
       chat: this.chat.slice(-60),
       status: this.status.slice(-20),
+      speech: this.speech,
     };
+  }
+
+  setSpeech(status: SpeechStatus): void {
+    this.speech = status;
+    this.emit('speech', status);
   }
 
   log(text: string): void {
@@ -105,9 +114,8 @@ export class Runtime extends EventEmitter {
         case 'say': {
           if (!this.sink) return;
           const res = await this.sink.say(e.text, { pin: e.pin, replyTo: e.replyTo });
-          const id = e.text.match(/IOU #(\d+)/)?.[1];
-          if (e.pin && res && res.messageId && id) {
-            await this.dispatch({ type: 'iou.receipt', id: Number(id), receipt: { messageId: res.messageId }, at: new Date().toISOString() });
+          if (e.pin && res && res.messageId && e.iouId !== undefined) {
+            await this.dispatch({ type: 'iou.receipt', id: e.iouId, receipt: { messageId: res.messageId }, at: new Date().toISOString() });
           }
           break;
         }

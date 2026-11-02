@@ -20,7 +20,7 @@
     const cls = `receipt ${iou.state.toLowerCase()}`;
     const stampWord = { OPEN: 'IOU', DUE: 'DUE', PAID: 'PAID', WELCHED: 'CAP', PENDING: 'IOU?', VOID: 'VOID' }[iou.state] || iou.state;
     const pct = iou.condition.kind === 'count' ? Math.min(100, Math.round((iou.condition.progress / iou.condition.target) * 100)) : null;
-    const votes = iou.state === 'DUE' ? `<div class="votes"><span>!paid <b>${iou.votes.paid.length}</b></span><span>!cap <b>${iou.votes.cap.length}</b></span></div>` : '';
+    const votes = iou.state === 'DUE' ? `<div class="votes"><span>!paid <b>${iou.votes.paid}</b></span><span>!cap <b>${iou.votes.cap}</b></span></div>` : '';
     const thumb = iou.state === 'PAID' && iou.receipt && iou.receipt.thumbnailUrl ? `<img class="thumb" src="${esc(iou.receipt.thumbnailUrl)}" alt="receipt clip">` : '';
     const when = new Date(iou.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
     return `<div class="head"><span class="id">IOU #${iou.id}</span><span>${esc(iou.channel)}</span></div>
@@ -74,8 +74,9 @@
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     ws.onmessage = (m) => {
       const msg = JSON.parse(m.data);
-      if (msg.type === 'snapshot') { state = msg.state; badge.hidden = msg.mode !== 'demo'; sync(); }
-      if (msg.type === 'state') { state = msg.state; sync(); }
+      // Public feed (/ws): redacted snapshot with vote counts, no transcript/chat/voter ids.
+      if (msg.type === 'snapshot') { state = msg.snapshot; badge.hidden = msg.snapshot.mode !== 'demo'; sync(); }
+      if (msg.type === 'state') { state = msg.snapshot; sync(); }
       if (msg.type === 'overlay' && ['stamp', 'due', 'paid', 'welched'].includes(msg.event)) slam(msg.event, msg.iou);
     };
     ws.onclose = () => setTimeout(connect, 1500);

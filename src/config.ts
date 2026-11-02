@@ -36,6 +36,10 @@ function detectMode(): Mode {
 export const config = {
   mode: detectMode(),
   port: Number(env('PORT', '3000')),
+  // Loopback by default: the panel and mic API are for the streamer's own machine. Set HOST=0.0.0.0
+  // only for a two-PC setup; operator routes still require sign-in in live/hybrid mode.
+  host: env('HOST', '127.0.0.1'),
+  operatorKey: env('OPERATOR_KEY') || undefined,
   publicUrl: env('PUBLIC_URL', `http://localhost:${env('PORT', '3000')}`),
   dataDir: env('DATA_DIR', 'data'),
   twitch: {

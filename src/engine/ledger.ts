@@ -92,7 +92,7 @@ export function reduce(state: LedgerState, event: LedgerEvent): ReduceResult {
     const due: IOU = { ...iou, state: 'DUE', dueAt: at, votes: { paid: [], cap: [] } };
     replace(due);
     effects.push({ type: 'overlay', event: 'due', iou: due });
-    effects.push({ type: 'say', text: dueText(due), pin: s.settings.autoPin });
+    effects.push({ type: 'say', text: dueText(due), pin: s.settings.autoPin, iouId: due.id });
     if (s.settings.autoClip) effects.push({ type: 'clip', iouId: due.id, purpose: 'due' });
     return due;
   };
