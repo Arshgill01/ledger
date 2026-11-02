@@ -23,19 +23,31 @@ Open http://localhost:3000. Demo mode plays a synthetic stream: scripted transcr
 
 1. Register an app at https://dev.twitch.tv/console/apps with redirect `http://localhost:3000/auth/callback`.
 2. `cp .env.example .env` and fill `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_CHANNEL`. For extraction, use `OPENAI_API_KEY` (default), or set `EXTRACTION_PROVIDER=deepseek` and `DEEPSEEK_API_KEY`. Microphone transcription still requires `OPENAI_API_KEY`.
-3. `npm run dev`, open http://localhost:3000/panel, click **Connect Twitch**, then **Start mic**.
+3. `npm run dev`, open http://localhost:3000/panel and sign in with the operator key from `data/operator.key` (created on first start, mode 0600; or set `OPERATOR_KEY`). Click **Connect Twitch**, then **Start mic**.
 4. Add http://localhost:3000/overlay as a browser source in OBS (1920x1080, transparent).
 
 Twitch requires two-factor authentication on the developer account before registering an app. Choose a **Confidential** client and complete Ledger's OAuth flow as the same broadcaster named in `TWITCH_CHANNEL`; other accounts are rejected.
 
 To verify Twitch before using AI, set `RECEIPTS_MODE=hybrid` in `.env`. This mode makes no AI calls, even if keys are present in the environment. Use `!iou <promise>` as the broadcaster/mod or log promises from the panel. Microphone transcription and model extraction require live mode. Speech-to-text uses OpenAI `gpt-4o-mini-transcribe`. Promise extraction supports OpenAI `gpt-4.1-mini` or DeepSeek `deepseek-flash` through its Responses API with JSON schema, thinking disabled, and a 1,024-token output limit. DeepSeek cannot replace the speech-to-text step; without an OpenAI key, use typed transcripts or `!iou`. Local transcription is not integrated.
 
-The server is intended for a trusted local machine. Its panel and mutation API currently have no access control; do not expose it through a public tunnel until those routes are protected. Public sharing requires a separate access-control change.
+### Who can see and do what
+
+| Surface | Access | Data |
+|---|---|---|
+| `/overlay`, `/ledger`, `/` (`/api/public/state`, `/ws`) | anyone who can reach the server | IOUs that are OPEN/DUE/PAID/WELCHED, vote **counts**, clip links. No transcript, chat, status log, voter ids, PENDING or VOID IOUs. |
+| `/panel` (`/api/state`, `/ws/operator`, every POST, `/auth/login`) | operator only in live/hybrid | everything, plus all mutations |
+
+- The server binds `127.0.0.1` by default. Set `HOST=0.0.0.0` only for a two-PC setup.
+- Operators sign in once on the panel with the operator key. The browser gets an HttpOnly, SameSite=Strict cookie derived from the key; the key is never served in page JS and never logged.
+- Requests and WebSocket handshakes carrying another site's `Origin` are refused, and JSON APIs require `Content-Type: application/json`, so a website the streamer visits can't drive or read the local server.
+- The panel can only send the actions it shows. Votes, receipts, extracted promises and Twitch metrics can't be injected over HTTP; demo-only fake metrics are refused outside demo mode.
+- Demo mode has no operator sign-in (synthetic data, no providers, loopback only), but the Origin checks and action allowlist still apply.
+- To share the public ledger through a tunnel (ngrok/cloudflared), set `PUBLIC_URL` to the tunnel URL. The overlay and ledger work without sign-in; the panel still needs the key. This path is covered by tests, but no tunnel has been tried for real yet.
 
 ## How it works
 
 ```
-mic → 4s audio chunks → OpenAI transcription → promise extraction (JSON schema) → IOU stamped on overlay
+mic → 4s audio segments → bounded server queue (serial) → OpenAI transcription → promise extraction (JSON schema) → IOU stamped on overlay
 Twitch EventSub (follows / subs / bits / raid / stream.offline) → condition progress → DUE
 DUE → Send Chat Message with pin:true + Create Clip (the receipt) → chat votes !paid / !cap → PAID or WELCHED
 ```

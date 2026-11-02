@@ -104,7 +104,7 @@ type Condition =
   - Never re-emit a promise already in the open list (fuzzy match by meaning).
   - `confidence` 0-1. Auto mode logs ≥ 0.7; below that goes to `PENDING`.
 - Model: default `gpt-4.1-mini` via Chat Completions with `response_format: json_schema`. Optional `EXTRACTION_PROVIDER=deepseek` uses `deepseek-flash` via Responses with JSON schema and thinking disabled. Both paths cap output at 1,024 tokens. Swap freely if cheaper/faster/better.
-- Transcription: default is browser `MediaRecorder` chunks (4 s, webm/opus) POSTed to the server, server calls OpenAI `audio.transcriptions` (`gpt-4o-mini-transcribe`). Target end-to-end stamp latency ≤ 6 s. Upgrade path: OpenAI Realtime transcription over WebSocket for ≤ 2 s. Either is acceptable; the stamp must visibly land while the moment is still fresh.
+- Transcription: default is browser `MediaRecorder` chunks (4 s, webm/opus) POSTed to the server, server calls OpenAI `audio.transcriptions` (`gpt-4o-mini-transcribe`). The panel uploads segments one at a time (recording order). The server queues them in a bounded FIFO (4 waiting + 1 in flight) and processes transcription + extraction serially. When the queue is full the newest segment gets HTTP 429, and the drop is counted and shown on the panel. Segments from a previous mic session, or older than 60 s, are skipped as stale. Provider calls are time-boxed (speech 20 s, 1 retry; extraction 30 s). With no speech backend (demo, hybrid, no OpenAI key), the mic control is disabled with the reason. Target end-to-end stamp latency ≤ 6 s. Upgrade path: OpenAI Realtime transcription over WebSocket for ≤ 2 s. Either is acceptable; the stamp must visibly land while the moment is still fresh.
 
 ### 4.4 Condition evaluation
 
@@ -155,6 +155,11 @@ Replies use `reply_parent_message_id` so they thread under the asker. Rate-limit
 ### 6.3 Public ledger `/ledger/:channel`
 - Read-only history: paid (with clip embeds), welched, open. This is the link `!receipts` posts. Shareable, works without Twitch auth.
 
+### 6.4 Access boundary
+- **Public** (overlay, ledger, landing): `GET /api/public/state`, WS `/ws`. Redacted view: only OPEN/DUE/PAID/WELCHED IOUs, vote counts instead of voter ids, no chat message ids, transcript, chat log or status log. `pending`/`void` overlay events aren't broadcast.
+- **Operator** (panel): `GET /api/state`, WS `/ws/operator`, all POST routes, `/auth/login`. Live/hybrid require the operator key (`OPERATOR_KEY` or generated `data/operator.key`, 0600), exchanged once on the panel for an HttpOnly SameSite=Strict cookie (HMAC of the key). Demo mode has no sign-in (synthetic data only).
+- All modes: bind `HOST` (default `127.0.0.1`); refuse requests and WS handshakes whose `Origin` isn't this server or `PUBLIC_URL`; JSON routes require `application/json`; `/api/event` accepts only panel actions (approve/dismiss/due/paid/welched/void/reopen, manual IOU with a server-set actor, validated settings; fake metrics and stream end in demo only). `/auth/callback` stays public and is protected by the OAuth `state`.
+
 ## 7. Modes **[HARD]**
 
 | Mode | Trigger | Twitch | AI providers | Purpose |
@@ -195,7 +200,11 @@ SPEC.md  AGENTS.md  README.md  .env.example
 src/
   index.ts              boot: pick mode, start server, start sources
   config.ts             env parsing, mode detection
-  server/http.ts        static + REST + WebSocket broadcast
+  server/http.ts        static + REST + public/operator WebSockets
+  server/access.ts      operator key, session cookie, Origin checks
+  server/actions.ts     allowlist + validation for panel actions
+  server/views.ts       redacted public snapshot
+  speech.ts             bounded serial queue for mic segments
   twitch/auth.ts        OAuth code grant, token store, refresh
   twitch/helix.ts       thin fetch wrapper for Helix
   twitch/eventsub.ts    WS client, subscriptions, reconnect

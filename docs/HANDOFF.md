@@ -17,7 +17,7 @@ npm test
 npm run demo
 ```
 
-The combined baseline has **18 passing tests**. `npm test` uses local mocks/servers and no paid model calls. The demo works without credentials, uses in-memory persistence, and must remain visibly synthetic on every surface. Do not use local `.env` or `data/` files from the owner's Mac in cloud work; they are deliberately absent from git.
+After the cloud P0 pass (branch `fix/p0-access-boundary-audio-queue`) the suite has **35 passing tests**. `npm test` uses local mocks/servers and no paid model calls. The demo works without credentials, uses in-memory persistence, and must remain visibly synthetic on every surface. Do not use local `.env` or `data/` files from the owner's Mac in cloud work; they are deliberately absent from git.
 
 Entry points: `src/index.ts` selects mode and wires sources; `src/runtime.ts` serializes state persistence and executes effects; `src/engine/ledger.ts` is the pure reducer. HTTP/WS exposure is in `src/server/http.ts`; recording is in `public/panel/panel.js`. Use `SPEC.md §12` for the rest of the map.
 
@@ -33,7 +33,8 @@ Entry points: `src/index.ts` selects mode and wires sources; `src/runtime.ts` se
 | Restart | Restart restored broadcaster auth, 7/7 subscriptions, persisted VOID test IOU and original auto-clip setting. Credential files are gitignored and mode 0600. | Power loss/crash recovery and durable side-effect replay are untested. |
 | DeepSeek extraction | **12/12 real provider cases passed**, including negatives and duplicate suppression. 8,970 input / 531 output tokens; peak cache-miss upper estimate $0.0033282; 0.91–3.18 s extraction latency. See `docs/AI_EVALUATION.md`. | Small synthetic text set, one repetition; not broad accuracy or microphone latency. |
 | OpenAI extraction | Existing Chat Completions path remains; mocked structured-output test passes. | No real OpenAI extraction call made in this local session. |
-| Speech + mic | Browser 4 s MediaRecorder segments and OpenAI transcription implementation exist. | **No real microphone/transcription test, no end-to-end latency measurement.** Audio loss/error gaps below are still present. |
+| Speech + mic | Bounded serial queue (`src/speech.ts`) with unit tests for slow processing, overflow, failure recovery, session change and age-out. Headless Chromium with a fake mic device and **stubbed** OpenAI HTTP (9 s per call, one injected 400): segments processed in order, backlog capped at 4, drops counted identically on server and panel, the failure surfaced, the stamp reached the public overlay. | **No real microphone or real transcription call, no real latency measurement.** The fake-device tone is not speech. |
+| Access boundary | Public/operator split with tests for denied and allowed REST, WS, cross-origin and CSRF-shaped requests; headless sign-in flow (wrong key refused, right key opens the panel, cookieless overlay context gets 401 on `/api/state`). | Not tried through a real tunnel (ngrok/cloudflared) or in OBS's browser source. |
 | Frontend | Devin reported 1920×1080 headless screenshots; local Firefox panel showed LIVE, Twitch connected, stream offline, mic OFF, persisted VOID test record. | No OBS test, comprehensive browser pass, or paid receipt animation verification. |
 
 The seven subscriptions are chat.message, chat.notification, follow v2, cheer, raid, stream.online, stream.offline. Accepted subscriptions do not prove that every event type has fired. Real clip creation was deliberately skipped while offline; auto-clip was temporarily disabled only for the pin test and then restored.
@@ -52,17 +53,17 @@ On the owner's Mac, `.env` selects `RECEIPTS_MODE=live` and `EXTRACTION_PROVIDER
 
 ## 4. Priorities for the cloud agent
 
-### P0 — public/private boundary (unresolved)
+### P0 — public/private boundary — implemented (cloud), needs local acceptance
 
-`src/server/http.ts` binds without a host restriction. Mutation routes accept unauthenticated events, including client-supplied actors. Both `/api/state` and `/ws` expose full runtime snapshots; WS also broadcasts transcripts/chat/status to everyone. This is **not a safe public ledger deployment**, even though the intended operator is local. No public tunnel was configured in this local session.
+Implemented: loopback bind by default (`HOST`); public `GET /api/public/state` and WS `/ws` with a redacted view (`src/server/views.ts`); operator-only `GET /api/state`, WS `/ws/operator`, every POST, and `/auth/login`. Operator sign-in uses a key from `OPERATOR_KEY` or a generated `data/operator.key` (0600, never logged or served), exchanged on the panel for an HttpOnly SameSite=Strict HMAC cookie. Requests and WS handshakes with a foreign `Origin` get 403; JSON routes require `application/json` (415 otherwise). `/api/event` is an allowlist (`src/server/actions.ts`): actors are set by the server; receipts, votes, extracted promises and Twitch metrics can't be injected; fake metrics and stream end work in demo only. `/auth/callback` stays public (OAuth state). Demo has no sign-in but keeps the Origin checks and allowlist. Spec §6.4 and README document it.
 
-Recommend a small explicit separation of public read-only ledger/overlay data and private operator endpoints. Then cover mutation authorization, private REST and WS reads, WS Origin checks and browser cross-origin requests. Ensure public snapshots omit raw mic transcript, private chat/status and unnecessary voter identities. Do not embed a shared admin secret in publicly served JS. Checking only a proxy's loopback address is not sufficient for a public tunnel. Preserve a usable local panel, OBS overlay and honest keyless demo. Document how the operator signs in and how public viewing works; verify both allowed and denied requests.
+Residual / not done: the key has no rotation UI (delete the file and restart; existing cookies stop working). Login has only a 400 ms failure delay as throttling (the key is 192-bit random; a weak `OPERATOR_KEY` is refused under 24 chars). The public ledger shows every OPEN/DUE/PAID/WELCHED IOU of the channel by design; quotes are public receipts. Behind a tunnel that rewrites `Host`, set `PUBLIC_URL` to the tunnel origin or browser POSTs get 403.
 
-### P0 — speech loss and observable failures (unresolved)
+### P0 — speech loss and observable failures — implemented (cloud), needs real-mic measurement
 
-`src/index.ts` returns success without processing an audio chunk when `busy` is true. That flag covers both transcription **and extraction**, so slow model calls can discard later speech. `public/panel/panel.js` starts new segments while uploads are in flight and suppresses upload failures/non-2xx responses. This is confirmed from the code; real loss frequency/latency has not been measured.
+Implemented: `src/speech.ts` bounded FIFO (4 waiting + 1 in flight), serial transcription+extraction, newest segment rejected with 429 + `Retry-After` when full. Segments from an older mic session, or waiting > 60 s, are skipped as stale. Failures are counted with `lastError` and the worker continues. Status goes to the panel over `/ws/operator`. Provider clients are time-boxed (speech 20 s / 1 retry; extraction 30 s; DeepSeek still 0 retries) because one hung call would otherwise stall the queue for the SDK's 10-minute default. Panel: serial uploads through a 3-slot client queue, session-guarded segment loop (fixes a double-recorder race on fast stop→start), `AudioContext` closed and tracks stopped on stop, every non-2xx/network error shown, mic disabled with a reason when no speech backend exists. Stop does not discard the final captured segment.
 
-Implement a small bounded FIFO with serial processing, defined overflow/backpressure behavior, and visible error/status reporting. Do not replace silent dropping with an unbounded queue. Preserve recording order and stop/start behavior, release mic/AudioContext resources, and avoid processing stale segments after stop. Test slow fake transcription/extraction, overflow, rejection recovery, and non-2xx UI feedback before asking the local session to measure latency. If no speech backend is configured, disable/explain the mic control rather than pretending to listen successfully.
+Not done: real-mic latency, and whether 4-deep is the right bound for real provider latency. Measure locally before tuning.
 
 ### P1 — state and integration correctness
 
@@ -75,8 +76,8 @@ Review and reproduce before changing behavior:
 - Twitch chat.notification may include gift-related notices with overlapping totals. Verify documented event shapes/counting before changing sub progress. Shared Chat is outside v1; do not silently accept events from other channels as local commitments.
 - Duplicate detection is intentionally cheap after model dedup. Devin fixed pepper/pizza false matches; test distinct stakes/conditions as well as paraphrases. Avoid aggressive fuzzy matching that swallows real commitments.
 - Only OPEN/DUE/PENDING IOUs go to the extractor. Review retrospective mentions of settled promises and whether recent settlements should be context. Any changed prompt/schema needs an updated offline contract and, later, bounded paid requalification.
-- A pin receipt's IOU ID is inferred from message text in `Runtime.execute`; carrying an explicit ID would avoid that coupling. Review simultaneous due receipts and replacement pin behavior without promising multiple concurrent pins.
-- No CI workflow exists. A small `npm ci`, typecheck, test workflow would prevent regression without live keys.
+- ~~A pin receipt's IOU ID is inferred from message text~~ Fixed in the cloud pass: `say` effects carry `iouId`. Simultaneous due receipts and replacement pin behaviour are still unreviewed.
+- CI: `.github/workflows/ci.yml` (npm ci, typecheck, test) was added in the cloud pass if the push was accepted; check the branch.
 
 Do not downgrade TypeScript or migrate persistence just because the original handoff listed those as possibilities. Current locked dependencies install and typecheck successfully. Broadcaster/mod votes currently follow the ordinary one-user rule; changing weighting or exclusion is a product decision, not a confirmed bug.
 
@@ -103,8 +104,8 @@ Already done: OAuth, seven accepted subscriptions, `!iou`, `!owed`, `!due`, actu
 Still to do against the cloud changes:
 
 - Pull the reviewed commits into a clean checkout; run `npm ci`, `npm run typecheck`, `npm test`; restart the local process and verify Twitch reconnects with existing local auth.
-- Test the implemented private/public boundary before exposing a ledger URL. Prove unauthenticated mutation/private WS reads fail and intended public reads still work.
-- After speech spending/provider choice is resolved, test mic → transcript → model → stamp, measuring complete latency and slow-provider/backpressure behavior. Short synthetic audio can validate transport separately; it is not a real microphone test.
+- Test the private/public boundary before exposing a ledger URL. In a normal browser: `/panel` asks for the key from `data/operator.key`; after sign-in, Connect Twitch still completes (the callback redirect is cross-site, and the panel recovers by checking its session). `/overlay` in OBS loads without sign-in. `curl -s localhost:3000/api/state` → 401; `curl -s localhost:3000/api/public/state` → redacted JSON. If a tunnel is used, set `PUBLIC_URL` to it and repeat from another device.
+- After speech spending/provider choice is resolved, test mic → transcript → model → stamp, measuring complete latency. Watch the panel's `server queue n/4 · dropped · failed` line for real backpressure behaviour. Short synthetic audio can validate transport separately; it is not a real microphone test.
 - With the broadcaster live and explicit permission for labeled test output: verify due clip and payoff clip appear through Get Clips and the UI; pin/settle/void clean up as appropriate. Do not clip unrelated live content.
 - Use a consenting real viewer/follower to verify count progress and voting; never present injected metric events as real Twitch delivery.
 - Load overlay inside OBS; verify transparency, stamp, progress, DUE, paid receipt and carryover. Record a real demo plus the main Codex build segment; show synthetic flows as synthetic.
