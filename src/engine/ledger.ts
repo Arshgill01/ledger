@@ -39,17 +39,23 @@ function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+const STOP = new Set(['the', 'and', 'for', 'that', 'this', 'with', 'will', 'gonna', 'going', 'chat', 'you', 'guys', 'all', 'some', 'one', 'out', 'off', 'into', 'onto', 'from', 'then', 'than']);
+
 function tokens(s: string): Set<string> {
-  return new Set(normalize(s).split(' ').filter((t) => t.length > 2));
+  return new Set(normalize(s).split(' ').filter((t) => t.length > 2 && !STOP.has(t)));
 }
 
+/** Cheap duplicate check used after the LLM's own dedup. Two promises are "similar" when most of their
+ *  content words match; stop words are ignored so "eat the pepper" and "eat the pizza" stay distinct. */
 export function similar(a: string, b: string): boolean {
   const ta = tokens(a);
   const tb = tokens(b);
   if (ta.size === 0 || tb.size === 0) return normalize(a) === normalize(b);
   let overlap = 0;
   for (const t of ta) if (tb.has(t)) overlap++;
-  return overlap / Math.min(ta.size, tb.size) >= 0.6;
+  const smaller = Math.min(ta.size, tb.size);
+  if (smaller === 1) return overlap === 1 && Math.max(ta.size, tb.size) <= 2;
+  return overlap / smaller >= 0.75;
 }
 
 function conditionMet(c: Condition, counters: LedgerState['counters'], now: string): boolean {

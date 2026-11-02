@@ -42,4 +42,4 @@ The engine (`src/engine/ledger.ts`) is a pure reducer with tests (`npm test`). E
 
 ## Status
 
-First cut complete: demo mode, engine, Twitch layer, extraction, overlay, panel, public ledger. Live-mode verification pending. See `docs/BUILD_LOG.md` and `docs/CODEX_PLAN.md`.
+First cut complete: demo mode, engine, Twitch layer, extraction, overlay, panel, public ledger. Live-mode verification pending. Start with `docs/HANDOFF.md` (gaps, risks, open decisions), then `docs/CODEX_PLAN.md` and `docs/BUILD_LOG.md`.

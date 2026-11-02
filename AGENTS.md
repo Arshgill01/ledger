@@ -1,6 +1,6 @@
 # AGENTS.md — how to work in this repo
 
-For any coding agent (Codex, Claude, Devin, Cursor, etc.) and any human. Read `SPEC.md` first; it is the source of truth for the product. This file is about working style and a small set of hard rules.
+For any coding agent (Codex, Claude, Devin, Cursor, etc.) and any human. Read `SPEC.md` first; it is the source of truth for the product. Then read `docs/HANDOFF.md`: the ranked list of known gaps, unverified parts, open decisions, and where you have free rein. This file is about working style and a small set of hard rules.
 
 ## Hard rules (do not break)
 

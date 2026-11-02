@@ -49,6 +49,8 @@ test('duplicate promises are not re-logged', () => {
   assert.equal(r.state.ious.length, 1);
   assert.ok(similar('eat the ghost pepper', 'eat a ghost pepper'));
   assert.ok(!similar('eat the ghost pepper', 'finish the boss tonight'));
+  assert.ok(!similar('eat the pepper', 'eat the pizza'));
+  assert.ok(similar('do twenty pushups on camera', 'do 20 pushups on camera'));
 });
 
 test('metric progress moves the card and hitting the target makes it DUE with pin + clip', () => {
