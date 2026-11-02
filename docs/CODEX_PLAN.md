@@ -4,7 +4,8 @@ The hackathon judges "how well it uses Codex" and requires the session ID of the
 
 ## Kickoff prompt (paste into a fresh Codex thread, in the repo)
 
-> Read SPEC.md and AGENTS.md. This repo is a Codex x TwitchCon hackathon entry called Ledger. Audit the current implementation against SPEC.md §4–§8 and list the gaps. Then, slice by slice, implement and verify: (1) run `npm run demo`, exercise the overlay/panel/ledger pages and fix any rough edges you find; (2) harden the Twitch layer in `src/twitch/` (EventSub reconnect, token refresh, `pin` on Send Chat Message, clip polling) and add tests where the engine is involved; (3) improve the promise extractor prompt in `src/engine/extract.ts` against the transcript lines in `fixtures/demo-stream.json` plus ten new tricky lines you write (sarcasm, reading chat aloud, duplicates); (4) upgrade the overlay stamp moment per SPEC.md §6.1; (5) update README with real screenshots. Keep `npm run typecheck && npm test` green and keep demo mode keyless. Record each decision that changes a default in SPEC.md.
+> Read SPEC.md, AGENTS.md and docs/HANDOFF.md first. Inspect the current code and tests, including the local Codex changes and Devin's duplicate-promise fix. First return prioritized recommendations with file paths and reproductions, distinguishing confirmed bugs, untested behavior and product choices. Then harden in small verified slices: (1) separate private mutations/transcripts from public REST/WS reads before any tunnel; (2) replace silent audio dropping with a bounded ordered queue and visible failures; (3) address reproduced state/integration defects; (4) polish the overlay/panel/public ledger against SPEC after reliability. Keep the engine pure, the demo keyless and explicitly synthetic, and tests free of paid calls. Preserve existing live evidence: OAuth/chat/pin/restart and the 12-case DeepSeek extraction run passed; real speech, follows, clips and OBS still need local verification. Do not ask for the owner's secrets in cloud. Keep an ExecPlan, update SPEC for defaults and BUILD_LOG with your actual thread ID, commit scoped changes, and return exact validation commands, branch/commit IDs and local acceptance steps. Keep the current stack unless a concrete need justifies new dependencies.
+
 
 ## Things to show on camera (15–20 s in the video)
 
@@ -12,10 +13,8 @@ The hackathon judges "how well it uses Codex" and requires the session ID of the
 - Codex editing `src/twitch/eventsub.ts` or `src/engine/ledger.ts` and running `npm test`.
 - `/status` output with the session ID visible.
 
-## Suggested order for the remaining hours
+## Work split
 
-1. Live-mode smoke test on the real channel (OAuth, chat reply to `!owed`, a typed promise, a real follow moving the bar, `!due` → pinned message + clip).
-2. Mic path with a real OpenAI key: latency check; switch to Realtime transcription only if chunked is visibly slow.
-3. Overlay polish (sound cue, receipt flip animation).
-4. Record the demo (OBS: game/scene + overlay + Twitch chat popout + panel), then the Codex segment.
-5. README screenshots, BUILD_LOG, submit with 3+ hours of buffer for YouTube processing.
+Cloud: follow the priority order and return contract in `docs/HANDOFF.md §§4–7`. Recommendations come first; focus implementation on verified failures rather than replacing the stack.
+
+Local after the owner returns: pull the cloud changes, run free checks, restart with the existing gitignored credentials, then complete the remaining speech/live-clip/follow/OBS checks. Keep synthetic and real evidence distinct. See `docs/HANDOFF.md §6`; do not re-register the app or repeat 2FA.

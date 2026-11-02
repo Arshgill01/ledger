@@ -15,7 +15,7 @@ Continue the first cut toward the SPEC §11 live demo. Keep the existing stack a
 5. Run typecheck/tests and a demo smoke test after edits. Record verified behavior and outstanding live dependencies in README/BUILD_LOG.
 6. Once credentials are available, run hybrid mode first: broadcaster OAuth, `!iou`, `!owed`, follow progress, due/pin, live clip, voting, restart persistence. Then verify mic/transcription latency with real OpenAI. Record actual outcomes; mocks are not live evidence.
 
-## Initial audit
+## Initial audit (historical findings; progress below records fixes)
 
 - Demo currently creates an OpenAI client whenever a key exists, allowing typed demo input to leave the synthetic path.
 - Runtime dispatch saves can overlap against one JSON temporary filename and emit stale state out of order.
@@ -33,7 +33,7 @@ Continue the first cut toward the SPEC §11 live demo. Keep the existing stack a
 
 - [x] Read SPEC, repository rules, README, handoff, and relevant implementation.
 - [x] Install locked dependencies (`npm ci`: 11 packages; audit reported zero vulnerabilities).
-- [x] Complete first regression slice: 14 tests pass, including zero-outbound demo HTTP smoke coverage and local EventSub reconnect/deduplication. Synthetic fixture reached PAID/WELCHED with fake receipts at localhost:3000. Browser visual review remains pending.
+- [x] Complete first regression slice: 14 tests pass, including zero-outbound demo HTTP smoke coverage and local EventSub reconnect/deduplication. Synthetic fixture reached PAID/WELCHED with fake receipts at localhost:3000. Local Firefox subsequently showed the connected live panel with microphone off; OBS review remains pending.
 - [x] Register Twitch app after owner completed 2FA; store credentials only in gitignored .env. Broadcaster OAuth, seven subscriptions, labeled !iou / !owed / !due, real pin, pin removal, void, and restart persistence passed.
 - [ ] Real follow, live clip, and microphone latency remain unverified.
 - [x] Add DeepSeek extraction using existing SDK, retaining separate OpenAI transcription. User requested existing DeepSeek credits first. Offline tests before a bounded provider run: maximum $0.25, no automatic retries, immutable inputs/artifacts and stop on failed smoke gate. Offline suite passed (18 tests). Real DeepSeek evaluation passed 12/12, 12 requests, peak cost upper estimate $0.0033282, latency 0.91–3.18 s. Immutable run artifacts: data/evals/deepseek-20261102-01. Select DeepSeek locally after verification.
@@ -42,9 +42,9 @@ Continue the first cut toward the SPEC §11 live demo. Keep the existing stack a
 
 User requested publishing all verified local work and expanding Devin's new docs/HANDOFF.md before a cloud review/hardening/design session. Preserve the incoming duplicate-promise fix.
 
-- [ ] Checkpoint the local implementation without credentials or local runtime artifacts.
-- [ ] Integrate origin/main, resolving overlapping README and engine/test changes without losing either slice.
-- [ ] Reconcile HANDOFF, kickoff prompt and verification status; prioritize unauthenticated public API/WS exposure and dropped audio. Record local/cloud responsibilities, remaining decisions, evidence and test commands.
-- [ ] Run typecheck, tests, keyless demo smoke and staged secret checks; commit and push main. Verify the remote SHA matches the local HEAD.
+- [x] Checkpoint the local implementation without credentials or local runtime artifacts.
+- [x] Integrate origin/main, resolving overlapping README and engine/test changes without losing either slice.
+- [x] Reconcile HANDOFF, kickoff prompt and verification status; prioritize unauthenticated public API/WS exposure and dropped audio. Record local/cloud responsibilities, remaining decisions, evidence and test commands.
+- [x] Run typecheck/tests (18 passed), clean git-archive `npm ci` + `node --import tsx --test test/demo.test.ts` (passed with no .env/data/provider keys), and staged credential checks. Publish combined commits to main and verify remote SHA in the final report.
 
 This pass publishes and documents the state; it does not claim to fix the access-control or audio-queue gaps. The cloud agent should propose its plan before implementation and preserve the live verification steps for the local session.
