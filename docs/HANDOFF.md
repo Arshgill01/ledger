@@ -77,7 +77,7 @@ Review and reproduce before changing behavior:
 - Duplicate detection is intentionally cheap after model dedup. Devin fixed pepper/pizza false matches; test distinct stakes/conditions as well as paraphrases. Avoid aggressive fuzzy matching that swallows real commitments.
 - Only OPEN/DUE/PENDING IOUs go to the extractor. Review retrospective mentions of settled promises and whether recent settlements should be context. Any changed prompt/schema needs an updated offline contract and, later, bounded paid requalification.
 - ~~A pin receipt's IOU ID is inferred from message text~~ Fixed in the cloud pass: `say` effects carry `iouId`. Simultaneous due receipts and replacement pin behaviour are still unreviewed.
-- CI: `.github/workflows/ci.yml` (npm ci, typecheck, test) was added in the cloud pass if the push was accepted; check the branch.
+- CI: `.github/workflows/ci.yml` (npm ci, typecheck, test on Node 22, no secrets) added in the cloud pass.
 
 Do not downgrade TypeScript or migrate persistence just because the original handoff listed those as possibilities. Current locked dependencies install and typecheck successfully. Broadcaster/mod votes currently follow the ordinary one-user rule; changing weighting or exclusion is a product decision, not a confirmed bug.
 
